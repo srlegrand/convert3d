@@ -1,102 +1,129 @@
 # convert3d
 
-Right-click any 3D file — or a **zip** with a model and its textures — and convert it to another 3D format.
+Right-click a 3D file, or a zip with a model and its textures, and convert it to another 3D format.
 
-```
-chair.fbx  ──right-click──▶  Convert 3D to ▸ glTF Binary (.glb)
-                                            USDZ (.usdz)
-                                            Wavefront OBJ (.obj)
-                                            Alembic (.abc)  …
-```
+Works in Windows Explorer, macOS Finder, KDE Dolphin and GNOME Files.
 
-Works on **Windows** (Explorer), **macOS** (Finder Quick Action) and **Linux** (KDE Dolphin, GNOME Files).
+## Formats
 
-## How it works
-
-convert3d is a small Rust program that handles the menu, zips and file handling. The actual 3D work
-is done by tools you already have (or can install for free):
-
-| Tool | Needed for |
+| Format | Needs |
 |---|---|
-| [Blender](https://www.blender.org/download/) 4.2+ (**required**) | fbx, glb, gltf, obj, abc, usd/usda/usdc/usdz, blend, stl, ply |
-| [Assimp](https://github.com/assimp/assimp) (optional) | dae, 3ds, x, 3mf, x3d, and ~35 more input formats (lwo, ase, ms3d, md2/md3/md5, ifc, ac, b3d, off, smd, …) |
-| Maya / `mayapy` (optional) | .ma, .mb |
-| 3ds Max / `3dsmaxbatch` (optional, Windows only) | .max |
+| fbx, glb, gltf, obj, abc, usd, usda, usdc, usdz, blend, stl, ply | Blender 4.2+ |
+| dae, 3ds, x, 3mf, x3d (and ~35 more read-only: lwo, ase, ms3d, md2, md3, ifc, off, smd…) | Assimp |
+| ma, mb | Maya |
+| max | 3ds Max (Windows only) |
 
-Any format can be converted to any other: convert3d finds the cheapest chain of tools, e.g.
-`.dae → (assimp) → .gltf → (blender) → .usdz`, or `.max → (3ds Max) → .fbx → (blender) → .glb`.
-
-### Zips
-
-Right-click a zip containing e.g. `model.obj` + `model.mtl` + `textures/*.png` (or an FBX and its
-textures). convert3d unpacks it, picks the model (FBX > glTF > USD > Alembic > OBJ > …, top-most
-folder first) and converts it.
-
-Texture paths that are broken — very common in FBX files that point to `C:\Users\artist\...` — are
-repaired by searching the zip (or the model's folder) for a file with the same name.
-
-### Where results go
-
-- Single-file results (glb, usdz, fbx with embedded textures, blend with packed textures, abc, stl, ply) are
-  written next to the source: `chair.fbx` → `chair.glb`.
-- Results with separate texture files (obj, gltf, usda, dae, …) go into a folder `chair_obj/`, or into
-  `chair_obj.zip` when the input was a zip.
-- Existing files are never overwritten; you get `chair (2).glb` instead (use `--overwrite` on the command line to replace).
+Blender is required. The rest are optional. Any format can be converted to any other if the tools for both are installed.
 
 ## Install
 
-1. Install [Blender](https://www.blender.org/download/). Optionally install Assimp:
-   - Linux: `sudo apt install assimp-utils` (or your distro's `assimp` package)
-   - macOS: `brew install assimp`
-   - Windows: build it or grab `assimp.exe` from a release, then `convert3d set-tool assimp C:\path\to\assimp.exe`
-2. Download convert3d for your OS from [Releases](../../releases) and unpack it.
-3. In a terminal, run:
+### Windows
 
-   ```sh
-   ./convert3d install        # Windows: .\convert3d.exe install
+1. Install Blender: [blender.org/download](https://www.blender.org/download/) or `winget install BlenderFoundation.Blender`
+2. Download `convert3d-windows-x86_64.zip` from [Releases](../../releases) and extract it.
+3. Open PowerShell in that folder and run:
+   ```powershell
+   .\convert3d.exe install
    ```
+4. Right-click a file → **Show more options** → **Convert 3D to**.
 
-   This copies convert3d to your user folder and adds the menu. No admin rights needed. Run it again after
-   installing Assimp/Maya/Max so their formats appear in the menu.
+You can delete the downloaded folder afterwards. convert3d copies itself to `%LOCALAPPDATA%\convert3d`.
 
-- **Windows 11:** the menu is under *Show more options* (or Shift+right-click).
-- **macOS:** the menu is under *Quick Actions → Convert 3D…* and asks which format you want. If Gatekeeper
-  blocks the downloaded binary, run `xattr -d com.apple.quarantine convert3d` first.
-- **Linux:** Dolphin shows *Convert 3D to ▸*; GNOME Files shows it under *Scripts*. convert3d also registers MIME
-  types for 3D extensions your system doesn't know (fbx, usd, abc, ply, …) so the menu shows up for them.
+### macOS
 
-Uninstall with `convert3d uninstall`.
+1. Install Blender: [blender.org/download](https://www.blender.org/download/) or `brew install --cask blender`
+2. Optional: `brew install assimp`
+3. Download `convert3d-macos-arm64.tar.gz` (Apple Silicon) or `convert3d-macos-x86_64.tar.gz` (Intel) from [Releases](../../releases), then in Terminal:
+   ```sh
+   cd ~/Downloads
+   tar xzf convert3d-macos-*.tar.gz
+   cd convert3d-macos-*
+   xattr -d com.apple.quarantine convert3d
+   ./convert3d install
+   ```
+4. Right-click a file → **Quick Actions** → **Convert 3D…** and pick a format.
+
+If the Quick Action doesn't appear: System Settings → General → Login Items & Extensions → Finder, and turn on **Convert 3D…**.
+
+### Linux
+
+1. Install Blender: `sudo snap install blender --classic`, your distro's package, or the tarball from blender.org.
+2. Optional: `sudo apt install assimp-utils` (Debian/Ubuntu) or `sudo dnf install assimp` (Fedora)
+3. Download `convert3d-linux-x86_64.tar.gz` (or `-arm64`) from [Releases](../../releases), then:
+   ```sh
+   tar xzf convert3d-linux-*.tar.gz
+   ./convert3d-linux-*/convert3d install
+   ```
+4. Close all file manager windows and reopen.
+5. Right-click a file → **Convert 3D to** (Dolphin), or **Scripts → Convert 3D to** (GNOME Files).
+
+Flatpak Blender isn't detected automatically. Point convert3d at it: `convert3d set-tool blender /path/to/blender`.
+
+### From source (any platform)
+
+Needs [Rust](https://rustup.rs).
+
+```sh
+cargo install --git https://github.com/srlegrand/convert3d
+convert3d install
+```
+
+## After installing new tools
+
+If you install Assimp, Maya or 3ds Max later, run `convert3d install` again to add their formats to the menu.
+
+Check what was found:
+
+```sh
+convert3d doctor
+```
+
+If a tool is installed somewhere unusual:
+
+```sh
+convert3d set-tool blender "/path/to/blender"
+convert3d set-tool assimp  "/path/to/assimp"
+convert3d set-tool mayapy  "/path/to/mayapy"
+convert3d set-tool 3dsmax  "C:\Program Files\Autodesk\3ds Max 2026\3dsmaxbatch.exe"
+```
+
+## Uninstall
+
+```sh
+convert3d uninstall
+```
+
+## Where output goes
+
+- `chair.fbx` → `chair.glb`, in the same folder.
+- Formats with separate texture files (obj, gltf, usda, dae…) go into a folder: `chair_obj/`.
+- If the input was a zip, multi-file results are zipped: `chair_obj.zip`.
+- Nothing is overwritten. An existing file gets `chair (2).glb`.
+
+## Zips
+
+The zip is searched for a model (FBX first, then glTF, USD, Alembic, OBJ…). Texture paths that point
+somewhere that no longer exists, such as `C:\Users\someone\textures\wood.png`, are fixed by finding a file with the same
+name in the zip.
 
 ## Command line
 
 ```sh
 convert3d convert --to glb chair.fbx table.obj props.zip
 convert3d convert --to usdz --out-dir ./usd *.fbx
-convert3d formats            # what can be read/written with the tools you have
-convert3d doctor             # which tools were found
-convert3d set-tool blender /path/to/blender
+convert3d formats
 ```
-
-Tools are found on `PATH`, in their standard install locations, via `CONVERT3D_BLENDER` / `CONVERT3D_ASSIMP` /
-`CONVERT3D_MAYAPY` / `CONVERT3D_3DSMAX`, or with `set-tool`. Logs of each run are kept in your cache folder
-(`convert3d doctor` prints where); when a right-click conversion fails, the error dialog shows the end of the log.
 
 ## Limitations
 
-- **.max** files can only be read by 3ds Max itself, so they need 3ds Max installed (Windows).
-- **.ma/.mb** need Maya. Maya ASCII is text, but it's a full scene language; there's no reliable way to
-  read it without Maya.
-- Alembic, STL and PLY don't store materials, so converting *to* them drops textures.
-- Each format keeps what it can: rigs and animation survive FBX ↔ glTF ↔ USD well, less so via OBJ or Assimp formats.
+- `.max` needs 3ds Max, which is Windows only.
+- `.ma` / `.mb` need Maya.
+- Alembic, STL and PLY have no materials, so textures are dropped when converting to them.
 
-## Building
+## Troubleshooting
 
-```sh
-cargo build --release
-cargo test
-```
-
-Pushing a `v*` tag builds release binaries for Linux (x86_64, arm64), Windows (x86_64) and macOS (arm64, x86_64).
+When a conversion fails, the error dialog shows the end of the log. Full logs are in the folder shown by
+`convert3d doctor`.
 
 ## License
 
