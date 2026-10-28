@@ -106,6 +106,12 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
     let kde = data_dir().join(KDE_FILE);
     write_file(&kde, &desktop)?;
     fs::set_permissions(&kde, fs::Permissions::from_mode(0o755))?;
+    // Refresh KDE's cache of MIME types and service menus.
+    for tool in ["kbuildsycoca6", "kbuildsycoca5"] {
+        if Command::new(tool).status().is_ok() {
+            break;
+        }
+    }
 
     // GNOME Files only shows scripts for every file type, so only add them
     // where Nautilus is in use.

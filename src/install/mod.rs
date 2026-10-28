@@ -49,6 +49,8 @@ pub fn install(tools: &Tools) -> Result<()> {
     windows::install(&spec)?;
 
     println!("Installed {}", spec.exe.display());
+    #[cfg(all(unix, not(target_os = "macos")))]
+    println!("Restart your file manager (close all its windows) to see the menu.");
     println!("Menu targets: {}", spec.targets.iter().map(|f| f.ext).collect::<Vec<_>>().join(", "));
     if tools.path(Tool::Blender).is_none() {
         println!("\nWARNING: Blender was not found. Install it, or run `convert3d set-tool blender <path>`.");
