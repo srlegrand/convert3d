@@ -18,7 +18,62 @@ pub struct Options {
 
 const STEP_PREFIX: &str = "__c3d_step";
 
-pub fn convert(input: &Path, opts: &Options, tools: &Tools, log: &mut Log) -> Result<PathBuf> {
+/// Names a conversion may write beside the source: one file, a folder of
+/// several files, or a zip when the input itself is a zip of several models.
+pub fn candidate_names(input: &Path, to: &str) -> Vec<String> {
+    let raw = input.file_stem().unwrap_or_default().to_string_lossy();
+    let stem = logical_stem(&raw);
+    let to = to.trim_start_matches('.').to_ascii_lowercase();
+    let mut names = vec![format!("{stem}.{to}"), format!("{stem}_{to}")];
+    if formats::is_zip(input) {
+        names.push(format!("{stem}_{to}.zip"));
+    }
+    names
+}
+
+/// `chair (2)` and `chair_(2)` are both `chair`. Repeated suffixes come off too,
+/// so `chair (2) (2)` is still `chair`.
+fn logical_stem(stem: &str) -> &str {
+    let mut stem = stem;
+    while let Some(stripped) = strip_increment(stem) {
+        if stripped.is_empty() {
+            break;
+        }
+        stem = stripped;
+    }
+    stem
+}
+
+/// One trailing ` (12)` or `_(12)`. The space or underscore belongs to the suffix.
+fn strip_increment(stem: &str) -> Option<&str> {
+    let (root, _) = one_increment(stem)?;
+    Some(root)
+}
+
+fn one_increment(stem: &str) -> Option<(&str, u64)> {
+    let open = stem.rfind('(')?;
+    if open == 0 || !stem.ends_with(')') {
+        return None;
+    }
+    let sep = stem.as_bytes()[open - 1];
+    if sep != b' ' && sep != b'_' {
+        return None;
+    }
+    let digits = &stem[open + 1..stem.len() - 1];
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let number = digits.parse().ok()?;
+    Some((&stem[..open - 1], number))
+}
+
+pub fn convert(
+    input: &Path,
+    opts: &Options,
+    tools: &Tools,
+    overrides: &plan::Overrides,
+    log: &mut Log,
+) -> Result<PathBuf> {
     let input = input.canonicalize().with_context(|| format!("{} not found", input.display()))?;
     let to = opts.to.trim_start_matches('.').to_ascii_lowercase();
     if formats::get(&to).is_none_or(|f| f.write.is_empty()) {
@@ -29,7 +84,8 @@ pub fn convert(input: &Path, opts: &Options, tools: &Tools, log: &mut Log) -> Re
     fs::create_dir_all(&staging)?;
 
     let from_zip = formats::is_zip(&input);
-    let stem = input.file_stem().unwrap_or_default().to_string_lossy().to_string();
+    let raw_stem = input.file_stem().unwrap_or_default().to_string_lossy();
+    let stem = logical_stem(&raw_stem).to_string();
     let (models, search_dirs) = if from_zip {
         let dir = work.path().join("src");
         extract_zip(&input, &dir)?;
@@ -45,20 +101,21 @@ pub fn convert(input: &Path, opts: &Options, tools: &Tools, log: &mut Log) -> Re
 
     for (n, model) in models.iter().enumerate() {
         let from = formats::ext_of(model);
-        let mut steps = plan::plan(&from, &to, &tools.available())?;
+        let mut steps = plan::plan_with(&from, &to, &tools.available(), overrides)?;
         if steps.is_empty() {
             // Same format out of a zip: re-export so textures get embedded/collected.
-            steps = plan::reexport(&from, &tools.available())?;
+            steps = plan::reexport_with(&from, &tools.available(), overrides)?;
         }
         log.line(&format!(
             "{} -> .{to} via {}",
             model.display(),
-            steps.iter().map(|s| format!("{}→.{}", s.tool.name(), s.to)).collect::<Vec<_>>().join(", ")
+            steps.iter().map(|s| format!("{}→.{}", s.actor.label(), s.to)).collect::<Vec<_>>().join(", ")
         ));
         let name = if models.len() == 1 {
             stem.clone()
         } else {
-            model.file_stem().unwrap_or_default().to_string_lossy().to_string()
+            let raw = model.file_stem().unwrap_or_default().to_string_lossy();
+            logical_stem(&raw).to_string()
         };
         let mut current = model.clone();
         for (i, step) in steps.iter().enumerate() {
@@ -69,7 +126,7 @@ pub fn convert(input: &Path, opts: &Options, tools: &Tools, log: &mut Log) -> Re
             // Each step gets its own scratch dir for scripts and unpacked textures.
             let scratch = work.path().join(format!("step{n}_{i}"));
             fs::create_dir_all(&scratch)?;
-            tools.run(step.tool, &current, &out, &search_dirs, &scratch, log)?;
+            tools.run(step, overrides, &current, &out, &search_dirs, &scratch, log)?;
             current = out;
         }
     }
@@ -171,17 +228,46 @@ fn place_output(
     Ok(dest)
 }
 
-/// `parent/name`, or `parent/name (2)` etc. when that already exists.
+/// `parent/name`, or `parent/name_(2)` when that name is taken.
+/// `name (2)` and `name_(2)` are the same file as `name`, so a second copy is
+/// `name_(3)` rather than `name (2) (2)`.
 fn target_path(parent: &Path, name: &str, overwrite: bool) -> PathBuf {
-    let first = parent.join(name);
+    let (base, ext) = split_name(name);
+    let first = parent.join(format!("{base}{ext}"));
     if overwrite || !first.exists() {
         return first;
     }
-    let (base, ext) = match name.rsplit_once('.') {
-        Some((b, e)) if !b.is_empty() => (b.to_string(), format!(".{e}")),
-        _ => (name.to_string(), String::new()),
-    };
-    (2..).map(|i| parent.join(format!("{base} ({i}){ext}"))).find(|p| !p.exists()).unwrap()
+    let taken = taken_numbers(parent, &base, &ext);
+    let n = (2u64..).find(|n| !taken.contains(n)).unwrap();
+    parent.join(format!("{base}_({n}){ext}"))
+}
+
+fn split_name(name: &str) -> (String, String) {
+    match name.rsplit_once('.') {
+        Some((base, ext)) if !base.is_empty() => (logical_stem(base).to_string(), format!(".{ext}")),
+        _ => (logical_stem(name).to_string(), String::new()),
+    }
+}
+
+fn taken_numbers(parent: &Path, base: &str, ext: &str) -> Vec<u64> {
+    let mut nums = Vec::new();
+    let Ok(dir) = fs::read_dir(parent) else { return nums };
+    for entry in dir.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let (stem, file_ext) = match name.rsplit_once('.') {
+            Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
+            _ => (name.as_ref(), String::new()),
+        };
+        if !file_ext.eq_ignore_ascii_case(ext) {
+            continue;
+        }
+        let Some((root, n)) = one_increment(stem) else { continue };
+        if root.eq_ignore_ascii_case(base) {
+            nums.push(n);
+        }
+    }
+    nums
 }
 
 fn write_zip(dir: &Path, dest: &Path) -> Result<()> {
@@ -265,10 +351,40 @@ mod tests {
     }
 
     #[test]
+    fn candidate_names_cover_file_folder_and_zip() {
+        assert_eq!(candidate_names(Path::new("C:/models/cube.ma"), ".usda"), ["cube.usda", "cube_usda"]);
+        assert_eq!(
+            candidate_names(Path::new("C:/models/cube (2) (2).ma"), "usda"),
+            ["cube.usda", "cube_usda"]
+        );
+        assert_eq!(
+            candidate_names(Path::new("C:/models/cube.zip"), "glb"),
+            ["cube.glb", "cube_glb", "cube_glb.zip"]
+        );
+    }
+
+    #[test]
     fn unique_names() {
         let d = tempfile::tempdir().unwrap();
         touch(&d.path().join("a.glb"));
-        assert_eq!(target_path(d.path(), "a.glb", false), d.path().join("a (2).glb"));
+        assert_eq!(target_path(d.path(), "a.glb", false), d.path().join("a_(2).glb"));
         assert_eq!(target_path(d.path(), "a.glb", true), d.path().join("a.glb"));
+    }
+
+    #[test]
+    fn increment_strips_stacked_suffixes_and_counts_both_spellings() {
+        let d = tempfile::tempdir().unwrap();
+        touch(&d.path().join("Natural_History.ma"));
+        touch(&d.path().join("Natural_History (2).ma"));
+        touch(&d.path().join("Natural_History (2) (2).ma"));
+        touch(&d.path().join("Natural_History_(4).ma"));
+        assert_eq!(
+            target_path(d.path(), "Natural_History (2) (2) (2).ma", false),
+            d.path().join("Natural_History_(3).ma")
+        );
+        assert_eq!(
+            target_path(d.path(), "Natural_History_(2).usda", false),
+            d.path().join("Natural_History.usda")
+        );
     }
 }

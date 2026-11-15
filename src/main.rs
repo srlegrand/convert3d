@@ -5,6 +5,7 @@
 mod convert;
 mod formats;
 mod install;
+mod options;
 mod plan;
 mod tools;
 mod ui;
@@ -13,7 +14,7 @@ use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use formats::Tool;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tools::Tools;
 
 #[derive(Parser)]
@@ -33,7 +34,7 @@ enum Cmd {
         /// Write results here instead of next to each input.
         #[arg(short, long)]
         out_dir: Option<PathBuf>,
-        /// Replace existing files instead of adding " (2)" to the name.
+        /// Replace existing files instead of adding "_(2)" to the name.
         #[arg(long)]
         overwrite: bool,
         /// Report with desktop notifications and dialogs (used by the right-click menu).
@@ -52,6 +53,12 @@ enum Cmd {
     Formats,
     /// Point convert3d at a tool: blender, assimp, mayapy or 3dsmax. Omit the path to reset.
     SetTool { tool: String, path: Option<PathBuf> },
+    /// Choose the application for each file type, and where converted files are saved.
+    Options {
+        /// Selected files, ignored. File managers may append them.
+        #[arg(hide = true)]
+        _files: Vec<PathBuf>,
+    },
 }
 
 fn main() {
@@ -79,6 +86,31 @@ fn run(cli: Cli) -> Result<()> {
                 }
             }
             println!("\nSaved tool paths: {}", tools::config_path().display());
+            match options::load() {
+                Ok(settings) => {
+                    println!(
+                        "Output: {}",
+                        if settings.ask_output {
+                            "ask for a folder before each conversion"
+                        } else {
+                            "same folder as the original"
+                        }
+                    );
+                    println!("Existing files: {}", settings.existing.label());
+                    if settings.overrides.read.is_empty() && settings.overrides.write.is_empty() {
+                        println!("Format overrides: none");
+                    } else {
+                        println!("Format overrides:");
+                        for (ext, slot) in &settings.overrides.read {
+                            println!("  .{ext} read   {}", options::slot_label(slot));
+                        }
+                        for (ext, slot) in &settings.overrides.write {
+                            println!("  .{ext} write  {}", options::slot_label(slot));
+                        }
+                    }
+                }
+                Err(e) => println!("Options: could not read {} ({e:#})", options::path().display()),
+            }
             println!("Logs: {}", ui::cache_dir().join("logs").display());
             Ok(())
         }
@@ -107,9 +139,28 @@ fn run(cli: Cli) -> Result<()> {
         }
         Cmd::SetTool { tool, path } => {
             let Some(t) = Tool::from_name(&tool) else {
-                bail!("unknown tool {tool}; use blender, assimp, mayapy or 3dsmax");
+                bail!("unknown tool {tool}; use blender, assimp, mayapy, 3dsmax or aztek");
             };
             tools::set_tool(t, path.as_deref())
+        }
+        Cmd::Options { .. } => options_cmd(),
+    }
+}
+
+fn options_cmd() -> Result<()> {
+    let tools = Tools::detect();
+    let settings = options::load()?;
+    let model = options::dialog_model(&tools, &settings);
+    match ui::edit_options(&model) {
+        Ok(None) => Ok(()),
+        Ok(Some(edited)) => {
+            options::apply_dialog(&tools, &settings, &edited)?;
+            ui::notify("Convert 3D", "Options saved. The next conversion uses them.");
+            Ok(())
+        }
+        Err(e) => {
+            ui::error_dialog("Convert 3D Options", &format!("{e:#}"));
+            Err(e)
         }
     }
 }
@@ -122,6 +173,15 @@ fn convert_cmd(
     inputs: Vec<PathBuf>,
 ) -> Result<()> {
     let tools = Tools::detect();
+    let settings = match options::load() {
+        Ok(settings) => settings,
+        Err(e) => {
+            if gui {
+                ui::error_dialog("Convert 3D failed", &format!("{e:#}"));
+            }
+            return Err(e);
+        }
+    };
     let to = match to {
         Some(t) => t,
         None if gui => {
@@ -136,15 +196,29 @@ fn convert_cmd(
         }
         None => bail!("--to is required"),
     };
+    let (out_dir, overwrite) = match placement(&inputs, &to, &settings, overwrite, out_dir) {
+        Ok(Some(place)) => place,
+        Ok(None) => return Ok(()),
+        Err(e) => {
+            if gui {
+                ui::error_dialog("Convert 3D", &format!("{e:#}"));
+            }
+            return Err(e);
+        }
+    };
     let mut log = ui::Log::open(!gui)?;
     let opts = convert::Options { to: to.clone(), out_dir, overwrite };
 
     // One conversion at a time: Explorer starts a process per selected file.
+    // try_lock already holds the exclusive lock. lock() again waits forever on
+    // Windows, because the same process never grants that lock to itself.
     let lock = File::create(ui::cache_dir().join("lock"))?;
-    if gui && lock.try_lock().is_err() {
-        ui::notify("Convert 3D", "Queued behind another conversion…");
+    if lock.try_lock().is_err() {
+        if gui {
+            ui::notify("Convert 3D", "Queued behind another conversion…");
+        }
+        lock.lock()?;
     }
-    lock.lock()?;
 
     let mut failures = Vec::new();
     for input in &inputs {
@@ -153,7 +227,7 @@ fn convert_cmd(
             ui::notify("Converting…", &format!("{name} → .{to}"));
         }
         log.line(&format!("== {}", input.display()));
-        match convert::convert(input, &opts, &tools, &mut log) {
+        match convert::convert(input, &opts, &tools, &settings.overrides, &mut log) {
             Ok(out) => {
                 log.line(&format!("wrote {}", out.display()));
                 if gui {
@@ -178,6 +252,42 @@ fn convert_cmd(
         );
     }
     bail!("{} of {} conversions failed", failures.len(), inputs.len())
+}
+
+/// Folder and overwrite choice for this run. `None` means the user cancelled.
+/// `--out-dir` skips the folder half and `--overwrite` skips the conflict half.
+/// When both halves are on, they are one window.
+fn placement(
+    inputs: &[PathBuf],
+    to: &str,
+    settings: &options::Settings,
+    cli_overwrite: bool,
+    cli_out_dir: Option<PathBuf>,
+) -> Result<Option<(Option<PathBuf>, bool)>> {
+    let ask_folder = cli_out_dir.is_none() && settings.ask_output;
+    let ask_conflict = !cli_overwrite && settings.existing == options::Existing::Ask;
+    let overwrite = cli_overwrite || settings.existing == options::Existing::Overwrite;
+    if !ask_folder && !ask_conflict {
+        return Ok(Some((cli_out_dir, overwrite)));
+    }
+
+    let folder = cli_out_dir.clone().unwrap_or_else(|| {
+        inputs
+            .first()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .unwrap_or_else(|| PathBuf::from("."))
+    });
+    let jobs: Vec<Vec<String>> = inputs.iter().map(|path| convert::candidate_names(path, to)).collect();
+    if ask_conflict && !ask_folder && !jobs.iter().flatten().any(|name| folder.join(name).exists()) {
+        return Ok(Some((cli_out_dir, false)));
+    }
+
+    let Some(choice) = ui::place_dialog(&ui::PlaceRequest { ask_folder, ask_conflict, folder, jobs })? else {
+        return Ok(None);
+    };
+    let out_dir = if ask_folder { Some(choice.folder) } else { cli_out_dir };
+    let overwrite = if ask_conflict { choice.overwrite } else { overwrite };
+    Ok(Some((out_dir, overwrite)))
 }
 
 #[cfg(windows)]

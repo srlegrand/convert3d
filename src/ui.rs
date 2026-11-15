@@ -1,7 +1,7 @@
 //! Logging plus the small bits of desktop UI (notifications, error dialogs,
 //! format picker) used when launched from a file manager.
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
@@ -166,4 +166,137 @@ pub fn pick_format(choices: &[(String, String)]) -> Option<String> {
     }?;
     let i = labels.iter().position(|l| *l == picked)?;
     Some(choices[i].0.clone())
+}
+
+pub struct PlaceRequest {
+    pub ask_folder: bool,
+    pub ask_conflict: bool,
+    pub folder: PathBuf,
+    pub jobs: Vec<Vec<String>>,
+}
+
+pub struct PlaceChoice {
+    pub folder: PathBuf,
+    pub overwrite: bool,
+}
+
+/// One window before conversion. It asks for a folder, whether to overwrite a
+/// name that already exists, or both. `None` means the user cancelled.
+pub fn place_dialog(req: &PlaceRequest) -> Result<Option<PlaceChoice>> {
+    let dir = tempfile::tempdir().context("could not create a temporary directory")?;
+    let input = dir.path().join("place-in.json");
+    let output = dir.path().join("place-out.json");
+    let jobs: Vec<_> = req.jobs.iter().map(|names| serde_json::json!({ "names": names })).collect();
+    let model = serde_json::json!({
+        "ask_folder": req.ask_folder,
+        "ask_conflict": req.ask_conflict,
+        "folder": req.folder.display().to_string(),
+        "jobs": jobs,
+    });
+    fs::write(&input, serde_json::to_vec_pretty(&model)?)?;
+
+    let output_bytes = if cfg!(windows) {
+        let script = dir.path().join("place_dialog.ps1");
+        fs::write(&script, include_str!("../scripts/place_dialog.ps1"))?;
+        let mut cmd = gui_command("powershell.exe");
+        cmd.args(["-NoProfile", "-STA", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
+            .arg("-InputPath")
+            .arg(&input)
+            .arg("-OutputPath")
+            .arg(&output);
+        cmd.output().context("could not open the conversion window")?
+    } else {
+        let script = dir.path().join("place_dialog.py");
+        fs::write(&script, include_str!("../scripts/place_dialog.py"))?;
+        let python = ["python3", "python"]
+            .into_iter()
+            .find(|bin| Command::new(bin).arg("--version").output().is_ok_and(|out| out.status.success()));
+        let Some(python) = python else {
+            bail!("python3 with tkinter is required to confirm where to save");
+        };
+        let mut cmd = gui_command(python);
+        cmd.arg(&script).arg(&input).arg(&output);
+        cmd.output().context("could not open the conversion window")?
+    };
+
+    if output.is_file() {
+        let text = fs::read_to_string(&output)?;
+        let value: serde_json::Value =
+            serde_json::from_str(&text).context("could not read the conversion window result")?;
+        let folder = PathBuf::from(value.get("folder").and_then(|v| v.as_str()).unwrap_or(""));
+        if req.ask_folder && (folder.as_os_str().is_empty() || folder.is_file()) {
+            bail!("choose a folder");
+        }
+        let overwrite = value.get("overwrite").and_then(|v| v.as_bool()).unwrap_or(false);
+        return Ok(Some(PlaceChoice { folder, overwrite }));
+    }
+    if output_bytes.status.code() == Some(2) {
+        return Ok(None);
+    }
+    let detail = String::from_utf8_lossy(&output_bytes.stderr);
+    let detail = detail.trim();
+    if detail.is_empty() {
+        bail!("conversion window failed ({})", output_bytes.status);
+    }
+    bail!("conversion window failed ({})", detail);
+}
+
+/// Opens the options window. `None` means the user cancelled.
+pub fn edit_options(model: &serde_json::Value) -> Result<Option<serde_json::Value>> {
+    let dir = tempfile::tempdir().context("could not create a temporary directory")?;
+    let input = dir.path().join("options-in.json");
+    let output = dir.path().join("options-out.json");
+    fs::write(&input, serde_json::to_vec_pretty(model)?)?;
+
+    let output_bytes = if cfg!(windows) {
+        let script = dir.path().join("options_dialog.ps1");
+        fs::write(&script, include_str!("../scripts/options_dialog.ps1"))?;
+        let mut cmd = gui_command("powershell.exe");
+        cmd.args(["-NoProfile", "-STA", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
+            .arg("-InputPath")
+            .arg(&input)
+            .arg("-OutputPath")
+            .arg(&output);
+        cmd.output().context("could not open the options window")?
+    } else {
+        let script = dir.path().join("options_dialog.py");
+        fs::write(&script, include_str!("../scripts/options_dialog.py"))?;
+        let python = ["python3", "python"]
+            .into_iter()
+            .find(|bin| Command::new(bin).arg("--version").output().is_ok_and(|out| out.status.success()));
+        let Some(python) = python else {
+            bail!("python3 with tkinter is required to open Convert 3D Options");
+        };
+        let mut cmd = gui_command(python);
+        cmd.arg(&script).arg(&input).arg(&output);
+        cmd.output().context("could not open the options window")?
+    };
+
+    if output.is_file() {
+        let text = fs::read_to_string(&output)?;
+        let value = serde_json::from_str(&text).context("could not read the options window result")?;
+        return Ok(Some(value));
+    }
+    if output_bytes.status.code() == Some(2) {
+        return Ok(None);
+    }
+    let detail = String::from_utf8_lossy(&output_bytes.stderr);
+    let detail = detail.trim();
+    if detail.is_empty() {
+        bail!("options window failed ({})", output_bytes.status);
+    }
+    bail!("options window failed ({})", detail);
+}
+
+fn gui_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd.stdin(Stdio::null());
+    cmd
 }

@@ -87,7 +87,8 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
     let _ = Command::new("update-mime-database").arg(data_dir().join("mime")).status();
 
     // KDE / Dolphin
-    let actions: Vec<String> = spec.targets.iter().map(|f| format!("to_{}", f.ext)).collect();
+    let mut actions: Vec<String> = spec.targets.iter().map(|f| format!("to_{}", f.ext)).collect();
+    actions.push("options".into());
     let mut desktop = format!(
         "[Desktop Entry]\nType=Service\nServiceTypes=KonqPopupMenu/Plugin\n\
          MimeType={};\nActions={};\nX-KDE-Submenu=Convert 3D to\nX-KDE-Priority=TopLevel\n\
@@ -103,6 +104,10 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
             name = f.name
         );
     }
+    desktop += &format!(
+        "\n[Desktop Action options]\nName=Options\nIcon=document-properties\n\
+         Exec=\"{exe}\" options %F\n"
+    );
     let kde = data_dir().join(KDE_FILE);
     write_file(&kde, &desktop)?;
     fs::set_permissions(&kde, fs::Permissions::from_mode(0o755))?;
@@ -123,6 +128,9 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
             write_file(&script, &format!("#!/bin/sh\nexec \"{exe}\" convert --gui --to {} \"$@\"\n", f.ext))?;
             fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
         }
+        let script = dir.join("Options");
+        write_file(&script, &format!("#!/bin/sh\nexec \"{exe}\" options \"$@\"\n"))?;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
     }
     Ok(())
 }

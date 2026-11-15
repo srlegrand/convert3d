@@ -98,7 +98,7 @@ convert3d uninstall
 - `chair.fbx` → `chair.glb`, in the same folder.
 - Formats with separate texture files (obj, gltf, usda, dae…) go into a folder: `chair_obj/`.
 - If the input was a zip, multi-file results are zipped: `chair_obj.zip`.
-- Nothing is overwritten. An existing file gets `chair (2).glb`.
+- Nothing is overwritten. An existing file gets `chair_(2).glb`, then `chair_(3).glb`. `chair (2)` is the same file as `chair`.
 
 ## Zips
 

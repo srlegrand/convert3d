@@ -11,6 +11,10 @@ fn workflow_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join("Library/Services/Convert 3D….workflow")
 }
 
+fn options_workflow_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join("Library/Services/Convert 3D Options.workflow")
+}
+
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
@@ -27,7 +31,7 @@ const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Convert 3D…</string>
+				<string>__MENU__</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>runWorkflowAsService</string>
@@ -186,12 +190,17 @@ const WFLOW: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 "#;
 
-pub fn install(spec: &MenuSpec) -> Result<()> {
-    let dir = workflow_dir();
+fn install_workflow(dir: PathBuf, menu: &str, command: &str) -> Result<()> {
     let _ = fs::remove_dir_all(&dir);
-    let command = format!("\"{}\" convert --gui \"$@\"", spec.exe.display());
-    write_file(&dir.join("Contents/Info.plist"), INFO_PLIST)?;
-    write_file(&dir.join("Contents/document.wflow"), &WFLOW.replace("__COMMAND__", &xml_escape(&command)))?;
+    write_file(&dir.join("Contents/Info.plist"), &INFO_PLIST.replace("__MENU__", menu))?;
+    write_file(&dir.join("Contents/document.wflow"), &WFLOW.replace("__COMMAND__", &xml_escape(command)))?;
+    Ok(())
+}
+
+pub fn install(spec: &MenuSpec) -> Result<()> {
+    let exe = spec.exe.display();
+    install_workflow(workflow_dir(), "Convert 3D…", &format!("\"{exe}\" convert --gui \"$@\""))?;
+    install_workflow(options_workflow_dir(), "Convert 3D Options", &format!("\"{exe}\" options"))?;
     // Downloaded binaries are quarantined by Gatekeeper; clear that on our copy.
     let _ = Command::new("xattr").args(["-d", "com.apple.quarantine"]).arg(&spec.exe).status();
     let _ = Command::new("/System/Library/CoreServices/pbs").arg("-update").status();
@@ -200,6 +209,7 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
 
 pub fn uninstall() -> Result<()> {
     let _ = fs::remove_dir_all(workflow_dir());
+    let _ = fs::remove_dir_all(options_workflow_dir());
     let _ = Command::new("/System/Library/CoreServices/pbs").arg("-update").status();
     Ok(())
 }
