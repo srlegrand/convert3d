@@ -39,12 +39,14 @@ When this is unchecked, the converted file is saved in the same folder as the or
 
 One step is one application reading a format and writing another. With Maya, .ma to .usda is Maya (writes .fbx) then Blender (writes .usda). Aztek reads and writes .ma, .mb, .obj, .fbx and USD itself, so that conversion is one step. Paths below are shared. A path on one file type replaces only that read or write. Any other program is run as: program.exe input output. Clear a field to use the shared application again.
 "@
+$hint.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 $form.Controls.Add($hint)
 
 $exist = New-Object System.Windows.Forms.GroupBox
 $exist.Text = "When the output already exists"
 $exist.Location = New-Object System.Drawing.Point(12, 116)
 $exist.Size = New-Object System.Drawing.Size(956, 108)
+$exist.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 $form.Controls.Add($exist)
 
 $mode = if ($data.existing) { [string]$data.existing } else { "ask" }
@@ -71,7 +73,10 @@ $apps.Text = "Applications"
 $apps.Location = New-Object System.Drawing.Point(12, 232)
 $toolCount = @($data.tools).Count
 $apps.Size = New-Object System.Drawing.Size(956, (30 + $toolCount * 28))
+$apps.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 $form.Controls.Add($apps)
+
+$script:appRows = @()
 
 $script:formatBoxes = New-Object System.Collections.Generic.List[System.Windows.Forms.TextBox]
 $script:reads = @{}
@@ -126,8 +131,23 @@ foreach ($tool in @($data.tools)) {
     $browse.Size = New-Object System.Drawing.Size(32, 24)
     $browse.Add_Click({ Browse-Into $this.Tag $true })
     $apps.Controls.Add($browse)
+    $script:appRows += [pscustomobject]@{ box = $box; browse = $browse }
     $y += 28
 }
+
+function Layout-Apps {
+    $width = $apps.ClientSize.Width
+    if ($width -lt 240) { return }
+    $boxX = 168
+    $boxW = $width - $boxX - 52
+    if ($boxW -lt 40) { $boxW = 40 }
+    foreach ($row in $script:appRows) {
+        $row.box.SetBounds($boxX, $row.box.Top, $boxW, $row.box.Height)
+        $row.browse.Left = $boxX + $boxW + 8
+    }
+}
+$apps.Add_Resize({ Layout-Apps })
+Layout-Apps
 
 $fileTop = $apps.Location.Y + $apps.Size.Height + 8
 $per = New-Object System.Windows.Forms.Label
@@ -142,9 +162,10 @@ function Add-Header([string]$text, [int]$x, [int]$y) {
     $header.Location = New-Object System.Drawing.Point($x, $y)
     $header.AutoSize = $true
     $form.Controls.Add($header)
+    return $header
 }
-Add-Header "Read" 280 ($fileTop + 20)
-Add-Header "Write" 620 ($fileTop + 20)
+$readHeader = Add-Header "Read" 280 ($fileTop + 20)
+$writeHeader = Add-Header "Write" 620 ($fileTop + 20)
 
 $panelTop = $fileTop + 40
 $panel = New-Object System.Windows.Forms.Panel
@@ -154,6 +175,7 @@ $panel.AutoScroll = $true
 $panel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 $form.Controls.Add($panel)
 
+$script:fileRows = @()
 $rowY = 4
 foreach ($row in @($data.rows)) {
     $ext = [string]$row.ext
@@ -184,10 +206,35 @@ foreach ($row in @($data.rows)) {
         $browse.Enabled = $enabled
         $browse.Add_Click({ Browse-Into $this.Tag $false })
         $panel.Controls.Add($browse)
+        if ($side -eq "read") { $readBox = $box; $readBrowse = $browse } else { $writeBox = $box; $writeBrowse = $browse }
+    }
+    $script:fileRows += [pscustomobject]@{
+        name = $name; read = $readBox; readBrowse = $readBrowse; write = $writeBox; writeBrowse = $writeBrowse
     }
     $rowY += 28
 }
-$panel.AutoScrollMinSize = New-Object System.Drawing.Size(900, ($rowY + 8))
+$panel.AutoScrollMinSize = New-Object System.Drawing.Size(0, ($rowY + 8))
+
+function Layout-Files {
+    $width = $panel.ClientSize.Width
+    if ($width -lt 240) { return }
+    $nameW = 250
+    $field = [Math]::Floor(($width - $nameW - 96) / 2)
+    if ($field -lt 40) { $field = 40 }
+    $readX = 8 + $nameW
+    $writeX = $readX + $field + 44
+    foreach ($row in $script:fileRows) {
+        $row.name.Width = $nameW
+        $row.read.SetBounds($readX, $row.read.Top, $field, $row.read.Height)
+        $row.readBrowse.Left = $readX + $field + 4
+        $row.write.SetBounds($writeX, $row.write.Top, $field, $row.write.Height)
+        $row.writeBrowse.Left = $writeX + $field + 4
+    }
+    $readHeader.Left = $panel.Left + $readX
+    $writeHeader.Left = $panel.Left + $writeX
+}
+$panel.Add_Resize({ Layout-Files })
+Layout-Files
 
 $cancel = New-Object System.Windows.Forms.Button
 $cancel.Text = "Cancel"

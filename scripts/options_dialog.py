@@ -90,14 +90,17 @@ def main() -> None:
     scroll = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
     body = ttk.Frame(canvas)
     body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.create_window((0, 0), window=body, anchor="nw")
+    window = canvas.create_window((0, 0), window=body, anchor="nw")
     canvas.configure(yscrollcommand=scroll.set)
+    canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
     canvas.pack(side="left", fill="both", expand=True)
     scroll.pack(side="right", fill="y")
 
     ttk.Label(body, text="File type").grid(row=0, column=0, sticky="w", padx=4)
     ttk.Label(body, text="Read").grid(row=0, column=1, sticky="w", padx=4)
     ttk.Label(body, text="Write").grid(row=0, column=3, sticky="w", padx=4)
+    body.columnconfigure(1, weight=1)
+    body.columnconfigure(3, weight=1)
 
     rows = []
     for i, row in enumerate(data.get("rows") or [], start=1):
@@ -106,9 +109,9 @@ def main() -> None:
         write = tk.StringVar(value=row.get("write") or "")
         read_entry = ttk.Entry(body, textvariable=read, width=36)
         write_entry = ttk.Entry(body, textvariable=write, width=36)
-        read_entry.grid(row=i, column=1, padx=4, pady=2)
+        read_entry.grid(row=i, column=1, sticky="ew", padx=4, pady=2)
         ttk.Button(body, text="...", width=3, command=lambda v=read: browse(v)).grid(row=i, column=2)
-        write_entry.grid(row=i, column=3, padx=4, pady=2)
+        write_entry.grid(row=i, column=3, sticky="ew", padx=4, pady=2)
         ttk.Button(body, text="...", width=3, command=lambda v=write: browse(v)).grid(row=i, column=4)
         if not row.get("can_read", True):
             read_entry.state(["disabled"])
