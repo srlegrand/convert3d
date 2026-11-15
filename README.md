@@ -27,6 +27,11 @@ Blender is required. The rest are optional. Any format can be converted to any o
    ```
 4. Right-click a file → **Show more options** → **Convert 3D to**.
 
+<img width="517" height="495" alt="2026-11-15_16-00-14" src="https://github.com/user-attachments/assets/93d69689-1e5c-4e6a-991a-34f846392939" />
+
+<img width="978" height="845" alt="2026-11-15_16-02-05" src="https://github.com/user-attachments/assets/4ebe2121-2d78-458c-9dde-2e4b425bc7aa" />
+
+
 You can delete the downloaded folder afterwards. convert3d copies itself to `%LOCALAPPDATA%\convert3d`.
 
 ### macOS
