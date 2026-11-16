@@ -10,7 +10,7 @@ Works in Windows Explorer, macOS Finder, KDE Dolphin and GNOME Files.
 |---|---|
 | fbx, glb, gltf, obj, abc, usd, usda, usdc, usdz, blend, stl, ply | Blender 4.2+ |
 | dae, 3ds, x, 3mf, x3d (and ~35 more read-only: lwo, ase, ms3d, md2, md3, ifc, off, smd…) | Assimp |
-| ma, mb | Maya |
+| ma, mb | Maya or Aztek |
 | max | 3ds Max (Windows only) |
 
 Blender is required. The rest are optional. Any format can be converted to any other if the tools for both are installed.
@@ -122,7 +122,7 @@ convert3d formats
 ## Limitations
 
 - `.max` needs 3ds Max, which is Windows only.
-- `.ma` / `.mb` need Maya.
+- `.ma` / `.mb` need Maya or Aztek.
 - Alembic, STL and PLY have no materials, so textures are dropped when converting to them.
 
 ## Troubleshooting
