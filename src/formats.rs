@@ -9,10 +9,11 @@ pub enum Tool {
     Assimp,
     Maya,
     Max,
+    Aztek,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 4] = [Tool::Blender, Tool::Assimp, Tool::Maya, Tool::Max];
+    pub const ALL: [Tool; 5] = [Tool::Blender, Tool::Assimp, Tool::Maya, Tool::Max, Tool::Aztek];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -20,6 +21,7 @@ impl Tool {
             Tool::Assimp => "assimp",
             Tool::Maya => "mayapy",
             Tool::Max => "3dsmax",
+            Tool::Aztek => "aztek",
         }
     }
 
@@ -28,9 +30,24 @@ impl Tool {
             match s.to_ascii_lowercase().as_str() {
                 "maya" => Some(Tool::Maya),
                 "max" | "3dsmaxbatch" => Some(Tool::Max),
+                "aztec" => Some(Tool::Aztek),
                 _ => None,
             },
         )
+    }
+
+    /// Recognizes a built-in integration from the executable file name.
+    /// `maya.exe` is not `mayapy`, and a different name is some other program.
+    pub fn tool_of_exe(path: &Path) -> Option<Tool> {
+        let stem = path.file_stem()?.to_string_lossy().to_ascii_lowercase();
+        match stem.as_str() {
+            "blender" => Some(Tool::Blender),
+            "assimp" => Some(Tool::Assimp),
+            "mayapy" => Some(Tool::Maya),
+            "3dsmax" | "3dsmaxbatch" => Some(Tool::Max),
+            "aztek" | "aztec" => Some(Tool::Aztek),
+            _ => None,
+        }
     }
 
     /// Relative cost of a conversion step, used to prefer Blender when several
@@ -39,7 +56,7 @@ impl Tool {
         match self {
             Tool::Blender => 10,
             Tool::Assimp => 12,
-            Tool::Maya | Tool::Max => 15,
+            Tool::Maya | Tool::Max | Tool::Aztek => 15,
         }
     }
 }
@@ -56,7 +73,7 @@ pub struct Format {
     pub menu: bool,
 }
 
-use Tool::{Assimp as A, Blender as B, Max as X, Maya as M};
+use Tool::{Assimp as A, Aztek as Z, Blender as B, Max as X, Maya as M};
 
 const fn fmt(
     ext: &'static str,
@@ -111,12 +128,12 @@ const ASSIMP_READ_ONLY: &[(&str, &str)] = &[
 pub static FORMATS: &[Format] = &[
     fmt("glb", "glTF Binary", &[B, A], &[B], None, true),
     fmt("gltf", "glTF", &[B, A], &[B, A], Some("gltf2"), true),
-    fmt("fbx", "FBX", &[B, A, M, X], &[B, M, X], None, true),
-    fmt("obj", "Wavefront OBJ", &[B, A], &[B], None, true),
-    fmt("usd", "USD", &[B], &[B], None, true),
-    fmt("usda", "USD ASCII", &[B], &[B], None, true),
-    fmt("usdc", "USD Crate", &[B], &[B], None, true),
-    fmt("usdz", "USDZ", &[B], &[B], None, true),
+    fmt("fbx", "FBX", &[B, A, M, X, Z], &[B, M, X, Z], None, true),
+    fmt("obj", "Wavefront OBJ", &[B, A, Z], &[B, Z], None, true),
+    fmt("usd", "USD", &[B, Z], &[B, Z], None, true),
+    fmt("usda", "USD ASCII", &[B, Z], &[B, Z], None, true),
+    fmt("usdc", "USD Crate", &[B, Z], &[B, Z], None, true),
+    fmt("usdz", "USDZ", &[B, Z], &[B, Z], None, true),
     fmt("abc", "Alembic", &[B], &[B], None, true),
     fmt("blend", "Blender", &[B], &[B], None, true),
     fmt("stl", "STL", &[B, A], &[B], None, true),
@@ -126,8 +143,8 @@ pub static FORMATS: &[Format] = &[
     fmt("x", "DirectX", &[A], &[A], Some("x"), true),
     fmt("3mf", "3MF", &[A], &[A], Some("3mf"), true),
     fmt("x3d", "X3D", &[A], &[A], Some("x3d"), true),
-    fmt("ma", "Maya ASCII", &[M], &[M], None, true),
-    fmt("mb", "Maya Binary", &[M], &[M], None, true),
+    fmt("ma", "Maya ASCII", &[M, Z], &[M, Z], None, true),
+    fmt("mb", "Maya Binary", &[M, Z], &[M, Z], None, true),
     fmt("max", "3ds Max", &[X], &[X], None, true),
 ];
 

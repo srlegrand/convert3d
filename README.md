@@ -10,7 +10,7 @@ Works in Windows Explorer, macOS Finder, KDE Dolphin and GNOME Files.
 |---|---|
 | fbx, glb, gltf, obj, abc, usd, usda, usdc, usdz, blend, stl, ply | Blender 4.2+ |
 | dae, 3ds, x, 3mf, x3d (and ~35 more read-only: lwo, ase, ms3d, md2, md3, ifc, off, smd…) | Assimp |
-| ma, mb | Maya |
+| ma, mb | Maya or Aztek |
 | max | 3ds Max (Windows only) |
 
 Blender is required. The rest are optional. Any format can be converted to any other if the tools for both are installed.
@@ -26,6 +26,11 @@ Blender is required. The rest are optional. Any format can be converted to any o
    .\convert3d.exe install
    ```
 4. Right-click a file → **Show more options** → **Convert 3D to**.
+
+<img width="517" height="495" alt="2026-11-15_16-00-14" src="https://github.com/user-attachments/assets/93d69689-1e5c-4e6a-991a-34f846392939" />
+
+<img width="978" height="845" alt="2026-11-15_16-02-05" src="https://github.com/user-attachments/assets/4ebe2121-2d78-458c-9dde-2e4b425bc7aa" />
+
 
 You can delete the downloaded folder afterwards. convert3d copies itself to `%LOCALAPPDATA%\convert3d`.
 
@@ -98,7 +103,7 @@ convert3d uninstall
 - `chair.fbx` → `chair.glb`, in the same folder.
 - Formats with separate texture files (obj, gltf, usda, dae…) go into a folder: `chair_obj/`.
 - If the input was a zip, multi-file results are zipped: `chair_obj.zip`.
-- Nothing is overwritten. An existing file gets `chair (2).glb`.
+- Nothing is overwritten. An existing file gets `chair_(2).glb`, then `chair_(3).glb`. `chair (2)` is the same file as `chair`.
 
 ## Zips
 
@@ -117,7 +122,7 @@ convert3d formats
 ## Limitations
 
 - `.max` needs 3ds Max, which is Windows only.
-- `.ma` / `.mb` need Maya.
+- `.ma` / `.mb` need Maya or Aztek.
 - Alembic, STL and PLY have no materials, so textures are dropped when converting to them.
 
 ## Troubleshooting

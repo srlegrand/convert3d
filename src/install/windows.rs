@@ -23,6 +23,13 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
         cmd.set_value("", &format!("\"{exe}\" convert --gui --to {} \"%1\"", f.ext))?;
     }
 
+    let (item, _) = hkcu.create_subkey(format!(r"{CLASSES}\{MENU_KEY}\shell\99_options"))?;
+    item.set_value("MUIVerb", &"Options")?;
+    // Draw a separator above this entry.
+    item.set_value("CommandFlags", &0x20u32)?;
+    let (cmd, _) = item.create_subkey("command")?;
+    cmd.set_value("", &format!("\"{exe}\" options"))?;
+
     for ext in &spec.inputs {
         let (verb, _) =
             hkcu.create_subkey(format!(r"{CLASSES}\SystemFileAssociations\.{ext}\shell\{VERB}"))?;

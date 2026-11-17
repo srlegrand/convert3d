@@ -1,6 +1,7 @@
-//! Locating and running the external converters (Blender, Assimp, Maya, 3ds Max).
+//! Locating and running the external converters (Blender, Assimp, Maya, 3ds Max, Aztek).
 
 use crate::formats::{self, Tool};
+use crate::plan::{self, Actor, Overrides, Step};
 use crate::ui::Log;
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
@@ -11,9 +12,14 @@ use std::process::{Command, Stdio};
 const BLENDER_SCRIPT: &str = include_str!("../scripts/blender_convert.py");
 const MAYA_SCRIPT: &str = include_str!("../scripts/maya_convert.py");
 const MAX_SCRIPT: &str = include_str!("../scripts/max_convert.ms");
+const AZTEK_SCRIPT: &str = include_str!("../scripts/aztek_convert.py");
+
+pub fn config_dir() -> PathBuf {
+    dirs::config_dir().unwrap_or_else(std::env::temp_dir).join("convert3d")
+}
 
 pub fn config_path() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(std::env::temp_dir).join("convert3d").join("tools.txt")
+    config_dir().join("tools.txt")
 }
 
 /// Tool paths saved with `convert3d set-tool`, one `name = path` per line.
@@ -71,22 +77,40 @@ impl Tools {
         self.paths.get(&tool).map(PathBuf::as_path)
     }
 
+    pub fn shared(&self) -> &BTreeMap<Tool, PathBuf> {
+        &self.paths
+    }
+
     pub fn available(&self) -> Vec<Tool> {
         self.paths.keys().copied().collect()
     }
 
     /// Runs one conversion step. `search_dirs` are where Blender looks for
     /// textures whose recorded paths are broken.
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
         &self,
-        tool: Tool,
+        step: &Step,
+        overrides: &Overrides,
         input: &Path,
         output: &Path,
         search_dirs: &[PathBuf],
         work: &Path,
         log: &mut Log,
     ) -> Result<()> {
-        let exe = self.path(tool).with_context(|| format!("{} not found", tool.name()))?;
+        let tool = match &step.actor {
+            Actor::Program(exe) => {
+                let mut cmd = Command::new(exe);
+                cmd.arg(input).arg(output);
+                return finish(&exe.display().to_string(), &mut cmd, output, log);
+            }
+            Actor::Tool(tool) => *tool,
+        };
+        let exe = plan::exe_override(tool, step, overrides)
+            .map(Path::to_path_buf)
+            .or_else(|| self.path(tool).map(Path::to_path_buf))
+            .or_else(|| plan::any_tool_exe(tool, overrides).map(Path::to_path_buf))
+            .with_context(|| format!("{} not found", tool.name()))?;
         let out_ext = formats::ext_of(output);
         let mut cmd;
         match tool {
@@ -135,14 +159,30 @@ impl Tools {
                     .arg("-mxsString")
                     .arg(format!("dst:{}", output.display()));
             }
+            Tool::Aztek => {
+                let job = work.join("job.json");
+                fs::write(&job, serde_json::json!({ "input": input, "output": output }).to_string())?;
+                let job_lit = job.display().to_string().replace('\\', "/").replace('"', "\\\"");
+                let script = work.join("aztek_convert.py");
+                fs::write(&script, AZTEK_SCRIPT.replace("__JOB__", &job_lit))?;
+                cmd = Command::new(&exe);
+                if let Some(dir) = exe.parent() {
+                    cmd.current_dir(dir);
+                }
+                cmd.arg("--batch").arg("--script").arg(&script);
+            }
         }
-        log.line(&format!("$ {cmd:?}"));
-        let status = run_logged(&mut cmd, log)?;
-        if !output.exists() {
-            bail!("{} failed ({status}) and produced no output", tool.name());
-        }
-        Ok(())
+        finish(tool.name(), &mut cmd, output, log)
     }
+}
+
+fn finish(name: &str, cmd: &mut Command, output: &Path, log: &mut Log) -> Result<()> {
+    log.line(&format!("$ {cmd:?}"));
+    let status = run_logged(cmd, log)?;
+    if !output.exists() {
+        bail!("{name} failed ({status}) and produced no output");
+    }
+    Ok(())
 }
 
 fn run_logged(cmd: &mut Command, log: &mut Log) -> Result<std::process::ExitStatus> {
@@ -272,6 +312,16 @@ fn find_tool(tool: Tool) -> Option<PathBuf> {
                     c.push(d.join("3dsmaxbatch.exe"));
                 }
             }
+            first_file(c)
+        }),
+        Tool::Aztek => on_path("aztek").or_else(|| {
+            let mut c = Vec::new();
+            for pf in program_files() {
+                c.push(pf.join("Aztek/aztek.exe"));
+                c.push(pf.join("Aztek/aztek"));
+            }
+            c.push(PathBuf::from("/Applications/Aztek/aztek"));
+            c.push(home.join("Applications/Aztek/aztek"));
             first_file(c)
         }),
     }
