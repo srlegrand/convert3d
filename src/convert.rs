@@ -76,32 +76,53 @@ pub fn convert(
 ) -> Result<PathBuf> {
     let input = input.canonicalize().with_context(|| format!("{} not found", input.display()))?;
     let to = opts.to.trim_start_matches('.').to_ascii_lowercase();
-    if formats::get(&to).is_none_or(|f| f.write.is_empty()) {
-        bail!("cannot write .{to}");
+    if !formats::is_zip(&input) && formats::ext_of(&input) == to {
+        bail!("{} is already .{to}", input.display());
     }
     let work = tempfile::Builder::new().prefix("convert3d-").tempdir()?;
-    let staging = work.path().join("out");
+    let staging = stage(&input, &to, work.path(), tools, overrides, log)?;
+
+    let out_parent = match &opts.out_dir {
+        Some(d) => d.clone(),
+        None => input.parent().unwrap().to_path_buf(),
+    };
+    fs::create_dir_all(&out_parent)?;
+    let raw_stem = input.file_stem().unwrap_or_default().to_string_lossy();
+    place_output(&staging, &out_parent, logical_stem(&raw_stem), &to, formats::is_zip(&input), opts.overwrite)
+}
+
+/// Converts `input` (a model or a zip) to `.to` inside `work`, and returns
+/// the folder holding the results: one model, or one per model in the zip,
+/// plus any texture files the exporter wrote beside them.
+pub fn stage(
+    input: &Path,
+    to: &str,
+    work: &Path,
+    tools: &Tools,
+    overrides: &plan::Overrides,
+    log: &mut Log,
+) -> Result<PathBuf> {
+    if formats::get(to).is_none_or(|f| f.write.is_empty()) {
+        bail!("cannot write .{to}");
+    }
+    let staging = work.join("out");
     fs::create_dir_all(&staging)?;
 
-    let from_zip = formats::is_zip(&input);
     let raw_stem = input.file_stem().unwrap_or_default().to_string_lossy();
     let stem = logical_stem(&raw_stem).to_string();
-    let (models, search_dirs) = if from_zip {
-        let dir = work.path().join("src");
-        extract_zip(&input, &dir)?;
+    let (models, search_dirs) = if formats::is_zip(input) {
+        let dir = work.join("src");
+        extract_zip(input, &dir)?;
         let models = pick_models(&dir, &tools.available())?;
         log.line(&format!("models in zip: {models:?}"));
         (models, vec![dir])
     } else {
-        if formats::ext_of(&input) == to {
-            bail!("{} is already .{to}", input.display());
-        }
-        (vec![input.clone()], vec![input.parent().unwrap().to_path_buf()])
+        (vec![input.to_path_buf()], vec![input.parent().unwrap().to_path_buf()])
     };
 
     for (n, model) in models.iter().enumerate() {
         let from = formats::ext_of(model);
-        let mut steps = plan::plan_with(&from, &to, &tools.available(), overrides)?;
+        let mut steps = plan::plan_with(&from, to, &tools.available(), overrides)?;
         if steps.is_empty() {
             // Same format out of a zip: re-export so textures get embedded/collected.
             steps = plan::reexport_with(&from, &tools.available(), overrides)?;
@@ -124,7 +145,7 @@ pub fn convert(
                 if last { format!("{name}.{to}") } else { format!("{STEP_PREFIX}{n}_{i}.{}", step.to) };
             let out = staging.join(file);
             // Each step gets its own scratch dir for scripts and unpacked textures.
-            let scratch = work.path().join(format!("step{n}_{i}"));
+            let scratch = work.join(format!("step{n}_{i}"));
             fs::create_dir_all(&scratch)?;
             tools.run(step, overrides, &current, &out, &search_dirs, &scratch, log)?;
             current = out;
@@ -138,13 +159,7 @@ pub fn convert(
             remove_any(&p)?;
         }
     }
-
-    let out_parent = match &opts.out_dir {
-        Some(d) => d.clone(),
-        None => input.parent().unwrap().to_path_buf(),
-    };
-    fs::create_dir_all(&out_parent)?;
-    place_output(&staging, &out_parent, &stem, &to, from_zip, opts.overwrite)
+    Ok(staging)
 }
 
 fn extract_zip(zip: &Path, dest: &Path) -> Result<()> {

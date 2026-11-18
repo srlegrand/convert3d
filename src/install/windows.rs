@@ -1,5 +1,6 @@
-//! Explorer cascading context menu, registered per-user under HKCU (no admin
-//! needed). On Windows 11 it appears under "Show more options".
+//! Explorer context menu entries, registered per-user under HKCU (no admin
+//! needed): a "Convert 3D to" submenu and "Preview 3D". On Windows 11 they
+//! appear under "Show more options".
 
 use super::MenuSpec;
 use anyhow::Result;
@@ -9,6 +10,7 @@ use winreg::enums::HKEY_CURRENT_USER;
 const CLASSES: &str = r"Software\Classes";
 const MENU_KEY: &str = "Convert3D.Menu";
 const VERB: &str = "Convert3D";
+const PREVIEW_VERB: &str = "Preview3D";
 
 pub fn install(spec: &MenuSpec) -> Result<()> {
     uninstall()?;
@@ -38,6 +40,14 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
         verb.set_value("ExtendedSubCommandsKey", &MENU_KEY)?;
         // Run once per selected file, even when many are selected.
         verb.set_value("MultiSelectModel", &"Player")?;
+
+        let (preview, _) =
+            hkcu.create_subkey(format!(r"{CLASSES}\SystemFileAssociations\.{ext}\shell\{PREVIEW_VERB}"))?;
+        preview.set_value("MUIVerb", &"Preview 3D")?;
+        preview.set_value("Icon", &format!("\"{exe}\",0"))?;
+        preview.set_value("MultiSelectModel", &"Player")?;
+        let (cmd, _) = preview.create_subkey("command")?;
+        cmd.set_value("", &format!("\"{exe}\" view --gui \"%1\""))?;
     }
     refresh_shell();
     Ok(())
@@ -48,7 +58,9 @@ pub fn uninstall() -> Result<()> {
     let _ = hkcu.delete_subkey_all(format!(r"{CLASSES}\{MENU_KEY}"));
     if let Ok(assoc) = hkcu.open_subkey(format!(r"{CLASSES}\SystemFileAssociations")) {
         for ext in assoc.enum_keys().flatten() {
-            let _ = assoc.delete_subkey_all(format!(r"{ext}\shell\{VERB}"));
+            for verb in [VERB, PREVIEW_VERB] {
+                let _ = assoc.delete_subkey_all(format!(r"{ext}\shell\{verb}"));
+            }
         }
     }
     refresh_shell();

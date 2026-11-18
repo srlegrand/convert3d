@@ -1,5 +1,6 @@
-//! A Finder Quick Action ("Convert 3D…") under Quick Actions / Services. It
-//! asks for the output format, since Quick Actions can't have submenus.
+//! Finder Quick Actions under Quick Actions / Services: "Convert 3D…", which
+//! asks for the output format since Quick Actions can't have submenus,
+//! "Preview 3D" and "Convert 3D Options".
 
 use super::{MenuSpec, write_file};
 use anyhow::Result;
@@ -7,12 +8,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-fn workflow_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join("Library/Services/Convert 3D….workflow")
-}
+const CONVERT: &str = "Convert 3D…";
+const PREVIEW: &str = "Preview 3D";
+const OPTIONS: &str = "Convert 3D Options";
 
-fn options_workflow_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join("Library/Services/Convert 3D Options.workflow")
+fn workflow_dir(name: &str) -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join(format!("Library/Services/{name}.workflow"))
 }
 
 fn xml_escape(s: &str) -> String {
@@ -31,7 +32,7 @@ const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>__MENU__</string>
+				<string>__NAME__</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>runWorkflowAsService</string>
@@ -190,26 +191,28 @@ const WFLOW: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 "#;
 
-fn install_workflow(dir: PathBuf, menu: &str, command: &str) -> Result<()> {
-    let _ = fs::remove_dir_all(&dir);
-    write_file(&dir.join("Contents/Info.plist"), &INFO_PLIST.replace("__MENU__", menu))?;
-    write_file(&dir.join("Contents/document.wflow"), &WFLOW.replace("__COMMAND__", &xml_escape(command)))?;
-    Ok(())
-}
-
 pub fn install(spec: &MenuSpec) -> Result<()> {
     let exe = spec.exe.display();
-    install_workflow(workflow_dir(), "Convert 3D…", &format!("\"{exe}\" convert --gui \"$@\""))?;
-    install_workflow(options_workflow_dir(), "Convert 3D Options", &format!("\"{exe}\" options"))?;
+    write_workflow(CONVERT, &format!("\"{exe}\" convert --gui \"$@\""))?;
+    write_workflow(PREVIEW, &format!("\"{exe}\" view --gui \"$@\""))?;
+    write_workflow(OPTIONS, &format!("\"{exe}\" options"))?;
     // Downloaded binaries are quarantined by Gatekeeper; clear that on our copy.
     let _ = Command::new("xattr").args(["-d", "com.apple.quarantine"]).arg(&spec.exe).status();
     let _ = Command::new("/System/Library/CoreServices/pbs").arg("-update").status();
     Ok(())
 }
 
+fn write_workflow(name: &str, command: &str) -> Result<()> {
+    let dir = workflow_dir(name);
+    let _ = fs::remove_dir_all(&dir);
+    write_file(&dir.join("Contents/Info.plist"), &INFO_PLIST.replace("__NAME__", &xml_escape(name)))?;
+    write_file(&dir.join("Contents/document.wflow"), &WFLOW.replace("__COMMAND__", &xml_escape(command)))
+}
+
 pub fn uninstall() -> Result<()> {
-    let _ = fs::remove_dir_all(workflow_dir());
-    let _ = fs::remove_dir_all(options_workflow_dir());
+    for name in [CONVERT, PREVIEW, OPTIONS] {
+        let _ = fs::remove_dir_all(workflow_dir(name));
+    }
     let _ = Command::new("/System/Library/CoreServices/pbs").arg("-update").status();
     Ok(())
 }

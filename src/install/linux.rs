@@ -1,5 +1,5 @@
-//! KDE Dolphin service menu, Nautilus scripts, and MIME types for 3D
-//! extensions the shared-mime-info database doesn't know.
+//! KDE Dolphin service menus, Nautilus scripts, a freedesktop thumbnailer,
+//! and MIME types for 3D extensions the shared-mime-info database doesn't know.
 
 use super::{MenuSpec, write_file};
 use anyhow::Result;
@@ -11,10 +11,32 @@ use std::process::Command;
 
 const MIME_FILE: &str = "mime/packages/convert3d.xml";
 const KDE_FILE: &str = "kio/servicemenus/convert3d.desktop";
+const KDE_PREVIEW_FILE: &str = "kio/servicemenus/convert3d-preview.desktop";
 const NAUTILUS_DIR: &str = "nautilus/scripts/Convert 3D to";
+const NAUTILUS_PREVIEW: &str = "nautilus/scripts/Preview 3D";
+const THUMBNAILER_FILE: &str = "thumbnailers/convert3d.thumbnailer";
 
 fn data_dir() -> PathBuf {
     dirs::data_dir().expect("no XDG data dir")
+}
+
+/// `~/.local/bin/convert3d`, so the command works in a terminal.
+fn command_link() -> Option<PathBuf> {
+    dirs::executable_dir().map(|d| d.join("convert3d"))
+}
+
+/// Points the terminal command at the installed copy. A real file that is
+/// already there (say from `cargo install`) is left alone.
+fn link_command(exe: &Path) {
+    let Some(link) = command_link() else { return };
+    if link.exists() && !link.is_symlink() {
+        return;
+    }
+    let _ = fs::remove_file(&link);
+    if let Some(dir) = link.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    let _ = std::os::unix::fs::symlink(exe, &link);
 }
 
 /// MIME types (from the system and user databases) whose glob matches `*.ext`.
@@ -63,9 +85,11 @@ fn own_mime(ext: &str, known: &[String]) -> Option<(String, u32)> {
 }
 
 pub fn install(spec: &MenuSpec) -> Result<()> {
+    link_command(&spec.exe);
     let exe = spec.exe.display().to_string();
 
     let mut mimes = BTreeSet::new();
+    let mut thumb_mimes = BTreeSet::new();
     let mut xml = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">\n",
@@ -78,9 +102,16 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
                  <glob pattern=\"*.{ext}\" weight=\"{weight}\"/>\n  </mime-type>\n",
                 crate::formats::get(ext).map_or(ext, |f| f.name)
             );
-            mimes.insert(mime);
+            mimes.insert(mime.clone());
+            if spec.thumbnails.contains(&ext) {
+                thumb_mimes.insert(mime);
+            }
         }
-        mimes.extend(known.into_iter().filter(|m| is_3d_mime(m)));
+        let known: Vec<_> = known.into_iter().filter(|m| is_3d_mime(m)).collect();
+        if spec.thumbnails.contains(&ext) {
+            thumb_mimes.extend(known.iter().filter(|m| *m != "application/zip").cloned());
+        }
+        mimes.extend(known);
     }
     xml += "</mime-info>\n";
     write_file(&data_dir().join(MIME_FILE), &xml)?;
@@ -111,6 +142,25 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
     let kde = data_dir().join(KDE_FILE);
     write_file(&kde, &desktop)?;
     fs::set_permissions(&kde, fs::Permissions::from_mode(0o755))?;
+    let preview = format!(
+        "[Desktop Entry]\nType=Service\nServiceTypes=KonqPopupMenu/Plugin\n\
+         MimeType={};\nActions=preview;\nX-KDE-Priority=TopLevel\nIcon=view-preview\n\n\
+         [Desktop Action preview]\nName=Preview 3D\nIcon=view-preview\nExec=\"{exe}\" view --gui %F\n",
+        mimes.iter().cloned().collect::<Vec<_>>().join(";"),
+    );
+    let kde_preview = data_dir().join(KDE_PREVIEW_FILE);
+    write_file(&kde_preview, &preview)?;
+    fs::set_permissions(&kde_preview, fs::Permissions::from_mode(0o755))?;
+
+    // Thumbnails, for file managers that read freedesktop .thumbnailer files
+    // (Plasma 6, Thunar, Nemo, Caja).
+    write_file(
+        &data_dir().join(THUMBNAILER_FILE),
+        &format!(
+            "[Thumbnailer Entry]\nTryExec={exe}\nExec=\"{exe}\" thumbnail -s %s %i %o\nMimeType={};\n",
+            thumb_mimes.into_iter().collect::<Vec<_>>().join(";")
+        ),
+    )?;
     // Refresh KDE's cache of MIME types and service menus.
     for tool in ["kbuildsycoca6", "kbuildsycoca5"] {
         if Command::new(tool).status().is_ok() {
@@ -131,6 +181,9 @@ pub fn install(spec: &MenuSpec) -> Result<()> {
         let script = dir.join("Options");
         write_file(&script, &format!("#!/bin/sh\nexec \"{exe}\" options \"$@\"\n"))?;
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
+        let script = data_dir().join(NAUTILUS_PREVIEW);
+        write_file(&script, &format!("#!/bin/sh\nexec \"{exe}\" view --gui \"$@\"\n"))?;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
     }
     Ok(())
 }
@@ -140,8 +193,15 @@ fn which_nautilus() -> bool {
 }
 
 pub fn uninstall() -> Result<()> {
-    let _ = fs::remove_file(data_dir().join(KDE_FILE));
+    for file in [KDE_FILE, KDE_PREVIEW_FILE, NAUTILUS_PREVIEW, THUMBNAILER_FILE] {
+        let _ = fs::remove_file(data_dir().join(file));
+    }
     let _ = fs::remove_dir_all(data_dir().join(NAUTILUS_DIR));
+    if let Some(link) =
+        command_link().filter(|l| fs::read_link(l).is_ok_and(|t| t.starts_with(super::install_dir())))
+    {
+        let _ = fs::remove_file(link);
+    }
     if fs::remove_file(data_dir().join(MIME_FILE)).is_ok() {
         let _ = Command::new("update-mime-database").arg(data_dir().join("mime")).status();
     }

@@ -1,4 +1,5 @@
-//! Registers the "Convert 3D to" right-click menu with the OS file manager.
+//! Registers the "Convert 3D to" and "Preview 3D" right-click menus (and, on
+//! Linux, a thumbnailer) with the OS file manager.
 
 #[cfg(all(unix, not(target_os = "macos")))]
 mod linux;
@@ -27,6 +28,9 @@ pub struct MenuSpec {
     /// (The macOS Quick Action accepts any file instead.)
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub inputs: Vec<&'static str>,
+    /// Extensions an installed tool can read, so thumbnails can be made.
+    #[cfg_attr(not(all(unix, not(target_os = "macos"))), allow(dead_code))]
+    pub thumbnails: Vec<&'static str>,
 }
 
 pub fn install(tools: &Tools) -> Result<()> {
@@ -38,8 +42,9 @@ pub fn install(tools: &Tools) -> Result<()> {
         formats::all().filter(|f| f.menu && f.write.iter().any(|t| usable(&t))).collect();
     let mut inputs: Vec<&'static str> =
         formats::all().filter(|f| !f.read.is_empty()).map(|f| f.ext).collect();
+    let thumbnails = formats::all().filter(|f| f.read.iter().any(|t| usable(&t))).map(|f| f.ext).collect();
     inputs.push("zip");
-    let spec = MenuSpec { exe, targets, inputs };
+    let spec = MenuSpec { exe, targets, inputs, thumbnails };
 
     #[cfg(all(unix, not(target_os = "macos")))]
     linux::install(&spec)?;
@@ -72,7 +77,7 @@ pub fn uninstall() -> Result<()> {
     windows::uninstall()?;
     // On Windows the running exe can't delete itself; ignore that.
     let _ = fs::remove_dir_all(install_dir().join("bin"));
-    println!("Removed the right-click menu.");
+    println!("Removed the right-click menu and thumbnails.");
     Ok(())
 }
 

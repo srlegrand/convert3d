@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "description": "Builds dist/viewer.min.js, the 3D viewer embedded in convert3d's preview pages",
+  "scripts": {
+    "build": "esbuild viewer.js --bundle --minify --format=iife --target=es2020 --legal-comments=none --banner:js=\"/* convert3d viewer. Includes three.js (MIT License, Copyright 2010-2024 three.js authors) */\" --outfile=dist/viewer.min.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0",
+    "three": "0.170.0"
+  }
+}

@@ -4,7 +4,7 @@
 use anyhow::{Context, Result, bail};
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 pub fn cache_dir() -> PathBuf {
@@ -21,18 +21,16 @@ impl Log {
     /// Opens a fresh log file and prunes old ones. With `echo`, log lines are
     /// also printed to stderr.
     pub fn open(echo: bool) -> Result<Log> {
-        let dir = cache_dir().join("logs");
+        Log::open_in("logs", echo)
+    }
+
+    /// Like `open`, in a folder of `cache_dir` of its own, so frequent jobs
+    /// such as thumbnails don't push conversion logs out.
+    pub fn open_in(folder: &str, echo: bool) -> Result<Log> {
+        let dir = cache_dir().join(folder);
         fs::create_dir_all(&dir)?;
-        let mut old: Vec<_> = fs::read_dir(&dir)?.flatten().map(|e| e.path()).collect();
-        old.sort();
-        for p in old.iter().rev().skip(30) {
-            let _ = fs::remove_file(p);
-        }
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let path = dir.join(format!("{stamp}-{}.log", std::process::id()));
+        prune(&dir, 30);
+        let path = dir.join(format!("{}-{}.log", timestamp(), std::process::id()));
         Ok(Log { file: File::create(&path)?, path, echo })
     }
 
@@ -46,7 +44,8 @@ impl Log {
     /// A handle that child processes write their output into.
     pub fn stdio(&self) -> Result<Stdio> {
         if self.echo {
-            return Ok(Stdio::inherit());
+            // stderr, so stdout only carries the paths we print.
+            return Ok(std::io::stderr().into());
         }
         Ok(self.file.try_clone()?.into())
     }
@@ -56,6 +55,35 @@ impl Log {
         let all: Vec<_> = text.lines().filter(|l| !l.trim().is_empty()).collect();
         all[all.len().saturating_sub(lines)..].join("\n")
     }
+}
+
+/// Seconds since 1970, for naming files so they sort by age.
+pub fn timestamp() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Deletes all but the `keep` newest files in `dir` (by timestamped name).
+pub fn prune(dir: &Path, keep: usize) {
+    let mut old: Vec<_> = fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).collect();
+    old.sort();
+    for p in old.iter().rev().skip(keep) {
+        let _ = fs::remove_file(p);
+    }
+}
+
+/// Opens a file with its default app (a web page in the browser).
+pub fn open_path(path: &Path) -> Result<()> {
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(windows) {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    if !spawn_quiet(Command::new(opener).arg(path)) {
+        anyhow::bail!("could not run {opener} to open {}", path.display());
+    }
+    Ok(())
 }
 
 fn spawn_quiet(cmd: &mut Command) -> bool {

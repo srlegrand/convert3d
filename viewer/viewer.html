@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preview 3D</title>
+<style>
+  :root { --fg: #e8e8ea; --dim: #9a9ca3; --panel: rgba(20, 21, 24, 0.72); --line: rgba(255, 255, 255, 0.12); }
+  body.light { --fg: #1d1e21; --dim: #5b5e66; --panel: rgba(255, 255, 255, 0.8); --line: rgba(0, 0, 0, 0.12); }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1e1f22; color: var(--fg);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #viewport { position: fixed; inset: 0; }
+  .panel { position: fixed; background: var(--panel); backdrop-filter: blur(8px); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px; }
+  #info { top: 12px; left: 12px; max-width: min(360px, calc(100vw - 48px)); }
+  #title { font-weight: 600; font-size: 14px; margin: 0 0 6px; word-break: break-all; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; }
+  dt { color: var(--dim); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  #anim-row { margin-top: 8px; }
+  select { max-width: 100%; font: inherit; }
+  #tools { bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; padding: 6px; }
+  button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: var(--dim); }
+  button.on { background: var(--line); }
+  kbd { color: var(--dim); font: 11px ui-monospace, monospace; margin-left: 4px; }
+  #error { position: fixed; top: 12px; right: 12px; max-width: 40vw; white-space: pre-wrap; color: #ff8a80; }
+  @media (max-width: 520px) { kbd { display: none; } #info { font-size: 12px; } }
+</style>
+</head>
+<body>
+<div id="viewport"></div>
+<div id="info" class="panel">
+  <p id="title"></p>
+  <dl id="stats"></dl>
+  <div id="anim-row" hidden><select id="anim" aria-label="Animation"></select></div>
+</div>
+<div id="tools" class="panel">
+  <button id="frame">Fit<kbd>F</kbd></button>
+  <button id="wire">Wireframe<kbd>W</kbd></button>
+  <button id="grid" class="on">Grid<kbd>G</kbd></button>
+  <button id="bg">Background<kbd>B</kbd></button>
+</div>
+<div id="error" class="panel" hidden></div>
+<script>
+window.C3D_TITLE = /*TITLE*/;
+window.C3D_MODELS = /*MODELS*/;
+</script>
+<script>
+/*VIEWER*/
+</script>
+</body>
+</html>

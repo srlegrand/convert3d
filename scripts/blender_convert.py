@@ -1,13 +1,16 @@
 # Run by convert3d inside headless Blender:
 #   blender -b --factory-startup --python blender_convert.py -- job.json
 # job.json: {"input", "output", "format", "search_dirs": [...], "unpack_dir"}
+# With "format": "png" it renders a thumbnail of "size" pixels instead.
 
 import json
+import math
 import os
 import re
 import sys
 
 import bpy
+from mathutils import Vector
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".bmp", ".exr", ".hdr", ".webp", ".dds", ".psd")
 MAX_INDEXED_FILES = 50000
@@ -108,7 +111,76 @@ def unpack_images(unpack_dir):
         img.unpack(method="REMOVE")
 
 
+def render_thumbnail(path, size):
+    """Renders the visible geometry from a three-quarter view onto a
+    transparent background."""
+    scene = bpy.context.scene
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    corners = [
+        obj.matrix_world @ Vector(c)
+        for obj in scene.objects
+        if obj.type in {"MESH", "CURVE", "SURFACE", "META", "FONT", "CURVES", "POINTCLOUD", "VOLUME"}
+        and obj.visible_get()
+        for c in obj.evaluated_get(depsgraph).bound_box
+    ]
+    if not corners:
+        raise RuntimeError("nothing to render")
+    lo = Vector(min(c[i] for c in corners) for i in range(3))
+    hi = Vector(max(c[i] for c in corners) for i in range(3))
+    center = (lo + hi) / 2
+    radius = max((hi - lo).length / 2, 1e-4)
+
+    cam_data = bpy.data.cameras.new("c3d_thumb")
+    cam_data.angle = math.radians(35)
+    cam = bpy.data.objects.new("c3d_thumb", cam_data)
+    scene.collection.objects.link(cam)
+    direction = Vector((1.0, -1.4, 0.8)).normalized()
+    rotation = (-direction).to_track_quat("-Z", "Y")
+    right, up = rotation @ Vector((1, 0, 0)), rotation @ Vector((0, 1, 0))
+    # Back off just far enough for every corner to fit in the frame.
+    tan_half = math.tan(cam_data.angle / 2) * 0.95
+    dist = max(
+        (c - center).dot(direction) + max(abs((c - center).dot(right)), abs((c - center).dot(up))) / tan_half
+        for c in corners
+    )
+    dist = max(dist, radius * 0.1)
+    cam.location = center + direction * dist
+    cam.rotation_euler = rotation.to_euler()
+    cam_data.clip_start = dist / 100
+    cam_data.clip_end = dist + radius * 4
+    scene.camera = cam
+
+    r = scene.render
+    r.resolution_x = r.resolution_y = size
+    r.resolution_percentage = 100
+    r.film_transparent = True
+    r.image_settings.file_format = "PNG"
+    r.image_settings.color_mode = "RGBA"
+    r.filepath = path
+    r.engine = "BLENDER_WORKBENCH"
+    shading = scene.display.shading
+    shading.light = "STUDIO"
+    shading.color_type = "TEXTURE"
+    shading.show_cavity = True
+    scene.display.render_aa = "8"
+    try:
+        bpy.ops.render.render(write_still=True)
+    except RuntimeError as e:
+        # Workbench needs a GPU context; Cycles on the CPU works anywhere.
+        print(f"workbench render failed ({e}), using Cycles")
+        r.engine = "CYCLES"
+        scene.cycles.device = "CPU"
+        scene.cycles.samples = 16
+        if scene.world is None:
+            scene.world = bpy.data.worlds.new("c3d_thumb")
+        scene.world.color = (0.8, 0.8, 0.8)
+        bpy.ops.render.render(write_still=True)
+
+
 def export_file(path, fmt):
+    if fmt == "png":
+        render_thumbnail(path, int(JOB.get("size", 256)))
+        return
     if fmt == "blend":
         bpy.ops.file.pack_all()
         bpy.ops.wm.save_as_mainfile(filepath=path, copy=True, compress=True)

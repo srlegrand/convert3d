@@ -115,26 +115,17 @@ impl Tools {
         let mut cmd;
         match tool {
             Tool::Blender => {
-                let script = work.join("blender_convert.py");
-                fs::write(&script, BLENDER_SCRIPT)?;
-                let job = work.join("job.json");
-                let tex_dir = work.join("unpacked_textures");
-                fs::write(
-                    &job,
+                cmd = blender_command(
+                    &exe,
+                    work,
                     serde_json::json!({
                         "input": input,
                         "output": output,
                         "format": out_ext,
                         "search_dirs": search_dirs,
-                        "unpack_dir": tex_dir,
-                    })
-                    .to_string(),
+                        "unpack_dir": work.join("unpacked_textures"),
+                    }),
                 )?;
-                cmd = Command::new(exe);
-                cmd.args(["-b", "--factory-startup", "--python-exit-code", "1", "--python"])
-                    .arg(&script)
-                    .arg("--")
-                    .arg(&job);
             }
             Tool::Assimp => {
                 let id = formats::get(&out_ext)
@@ -174,6 +165,50 @@ impl Tools {
         }
         finish(tool.name(), &mut cmd, output, log)
     }
+
+    /// Renders a `size`×`size` PNG of a file Blender can read.
+    pub fn render_thumbnail(
+        &self,
+        input: &Path,
+        output: &Path,
+        size: u32,
+        search_dirs: &[PathBuf],
+        work: &Path,
+        log: &mut Log,
+    ) -> Result<()> {
+        let exe = self.path(Tool::Blender).context("blender not found")?;
+        let mut cmd = blender_command(
+            exe,
+            work,
+            serde_json::json!({
+                "input": input,
+                "output": output,
+                "format": "png",
+                "size": size,
+                "search_dirs": search_dirs,
+            }),
+        )?;
+        log.line(&format!("$ {cmd:?}"));
+        let status = run_logged(&mut cmd, log)?;
+        if !output.exists() {
+            bail!("blender failed ({status}) and rendered no thumbnail");
+        }
+        Ok(())
+    }
+}
+
+/// Headless Blender running the bundled script on `job`.
+fn blender_command(exe: &Path, work: &Path, job: serde_json::Value) -> Result<Command> {
+    let script = work.join("blender_convert.py");
+    fs::write(&script, BLENDER_SCRIPT)?;
+    let job_file = work.join("job.json");
+    fs::write(&job_file, job.to_string())?;
+    let mut cmd = Command::new(exe);
+    cmd.args(["-b", "--factory-startup", "--python-exit-code", "1", "--python"])
+        .arg(&script)
+        .arg("--")
+        .arg(&job_file);
+    Ok(cmd)
 }
 
 fn finish(name: &str, cmd: &mut Command, output: &Path, log: &mut Log) -> Result<()> {

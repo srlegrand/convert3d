@@ -7,6 +7,7 @@ mod formats;
 mod install;
 mod options;
 mod plan;
+mod preview;
 mod tools;
 mod ui;
 
@@ -17,8 +18,17 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use tools::Tools;
 
+/// The release version when built by CI, else the one in Cargo.toml.
+const VERSION: &str = match option_env!("CONVERT3D_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 #[derive(Parser)]
-#[command(version, about = "Convert any 3D file (or a zip of model + textures) to another 3D format")]
+#[command(
+    version = VERSION,
+    about = "Convert or preview any 3D file (or a zip of model + textures)"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -43,9 +53,29 @@ enum Cmd {
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
     },
-    /// Add "Convert 3D to" to the file manager's right-click menu.
+    /// Open an interactive 3D preview in the web browser.
+    View {
+        /// Only write the preview page and print its path.
+        #[arg(long)]
+        no_open: bool,
+        /// Report with desktop notifications and dialogs (used by the right-click menu).
+        #[arg(long)]
+        gui: bool,
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+    },
+    /// Render a PNG thumbnail (used by the file manager).
+    Thumbnail {
+        /// Width and height in pixels.
+        #[arg(short, long, default_value_t = 256)]
+        size: u32,
+        input: PathBuf,
+        output: PathBuf,
+    },
+    /// Add "Convert 3D to" and "Preview 3D" to the file manager's right-click
+    /// menu, and 3D thumbnails where the file manager supports them.
     Install,
-    /// Remove the right-click menu.
+    /// Remove the right-click menu and thumbnails.
     Uninstall,
     /// Show which converters were found.
     Doctor,
@@ -74,6 +104,17 @@ fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
         Cmd::Convert { to, out_dir, overwrite, gui, inputs } => {
             convert_cmd(to, out_dir, overwrite, gui, inputs)
+        }
+        Cmd::View { no_open, gui, inputs } => view_cmd(no_open, gui, inputs),
+        Cmd::Thumbnail { size, input, output } => {
+            let mut log = ui::Log::open_in("thumbnail-logs", false)?;
+            log.line(&format!("== {}", input.display()));
+            let result =
+                preview::thumbnail(&input, &output, size.clamp(16, 2048), &Tools::detect(), &mut log);
+            if let Err(e) = &result {
+                log.line(&format!("error: {e:#}"));
+            }
+            result
         }
         Cmd::Install => install::install(&Tools::detect()),
         Cmd::Uninstall => install::uninstall(),
@@ -288,6 +329,48 @@ fn placement(
     let out_dir = if ask_folder { Some(choice.folder) } else { cli_out_dir };
     let overwrite = if ask_conflict { choice.overwrite } else { overwrite };
     Ok(Some((out_dir, overwrite)))
+}
+
+fn view_cmd(no_open: bool, gui: bool, inputs: Vec<PathBuf>) -> Result<()> {
+    let tools = Tools::detect();
+    let mut log = ui::Log::open(!gui)?;
+    // A preview is still worth showing when the options file can't be read.
+    let overrides = options::load().map(|s| s.overrides).unwrap_or_else(|e| {
+        log.line(&format!("ignoring options: {e:#}"));
+        Default::default()
+    });
+    let mut failures = Vec::new();
+    for input in &inputs {
+        let name = input.file_name().unwrap_or_default().to_string_lossy().to_string();
+        if gui && preview::needs_conversion(input) {
+            ui::notify("Preparing preview…", &name);
+        }
+        log.line(&format!("== preview {}", input.display()));
+        let page = preview::view(input, &tools, &overrides, &mut log)
+            .and_then(|page| if no_open { Ok(page) } else { ui::open_path(&page).map(|_| page) });
+        match page {
+            Ok(page) => {
+                log.line(&format!("wrote {}", page.display()));
+                if !gui {
+                    println!("{}", page.display());
+                }
+            }
+            Err(e) => {
+                log.line(&format!("error: {e:#}"));
+                failures.push(format!("{name}: {e:#}"));
+            }
+        }
+    }
+    if failures.is_empty() {
+        return Ok(());
+    }
+    if gui {
+        ui::error_dialog(
+            "Preview 3D failed",
+            &format!("{}\n\nLog: {}\n\n{}", failures.join("\n"), log.path.display(), log.tail(15)),
+        );
+    }
+    bail!("{} of {} previews failed", failures.len(), inputs.len())
 }
 
 #[cfg(windows)]
