@@ -1,0 +1,12 @@
+#!/bin/bash
+# Run by the installer package as root, after /usr/local/bin/convert3d is in
+# place. The right-click menus are per user, so add them for whoever is
+# installing: the person logged in at the screen, else whoever ran `sudo installer`.
+user=$(stat -f%Su /dev/console 2>/dev/null || true)
+if [[ -z $user || $user == root ]]; then user=${SUDO_USER:-${USER:-}}; fi
+if [[ -z $user || $user == root ]]; then
+    echo "No user to add the menus for. Run: convert3d install"
+    exit 0
+fi
+sudo -H -u "$user" /usr/local/bin/convert3d install || echo "Could not add the menus. Run: convert3d install"
+exit 0

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Convert 3D
+Comment=Right-click a 3D file to convert it to another format or preview it
+Exec=convert3d
+Icon=convert3d
+Categories=Graphics;3DGraphics;
+Terminal=false

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>convert3d - right-click a 3D file, pick a format</title>
+<meta name="description" content="Free, open-source right-click menu for Windows, macOS and Linux that converts 3D files between FBX, glTF, OBJ, USD, Blender and more, and previews them. Nothing is uploaded.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="./"><img src="icon.svg" alt="">convert3d</a>
+  <nav>
+    <a href="#download">Download</a>
+    <a href="docs.html">Docs</a>
+    <a href="https://github.com/srlegrand/convert3d">GitHub</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <div>
+    <h1>Right-click a 3D file. Pick a format. Done.</h1>
+    <p class="lead">convert3d adds <b>Convert 3D to</b> and <b>Preview 3D</b> to the right-click menu
+      of your 3D files. Choose glTF, FBX, USD or any other format, and the converted file
+      appears next to the original.</p>
+    <ul class="pills">
+      <li>Free &amp; open source</li>
+      <li>Windows, macOS, Linux</li>
+      <li>Nothing is uploaded</li>
+    </ul>
+  </div>
+  <div class="demo" aria-hidden="true">
+    <div class="file"><div class="thumb"><img src="icon.svg" alt=""></div>chair.fbx<br>38 MB</div>
+    <div class="menu m1">
+      <div class="dim">Open</div>
+      <div class="dim">Open with</div>
+      <div class="sep"></div>
+      <div class="on">Convert 3D to &nbsp;&#9656;</div>
+      <div>Preview 3D</div>
+      <div class="sep"></div>
+      <div class="dim">Rename</div>
+      <div class="dim">Properties</div>
+    </div>
+    <div class="menu m2">
+      <div class="on">glTF Binary (.glb)</div>
+      <div>FBX (.fbx)</div>
+      <div>Wavefront OBJ (.obj)</div>
+      <div>USDZ (.usdz)</div>
+      <div>Blender (.blend)</div>
+      <div class="dim">and more...</div>
+      <div class="sep"></div>
+      <div>Options</div>
+    </div>
+  </div>
+</div>
+
+<section id="download">
+  <h2>Download</h2>
+  <div class="card">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-os="windows" aria-selected="true">Windows</button>
+      <button role="tab" data-os="mac" aria-selected="false">macOS</button>
+      <button role="tab" data-os="linux" aria-selected="false">Linux</button>
+    </div>
+
+    <div class="panel" data-os="windows">
+      <a class="btn" href="https://github.com/srlegrand/convert3d/releases/latest/download/Convert3D-Setup.exe">
+        Download for Windows<small>Convert3D-Setup.exe &middot; Windows 10 and 11</small></a>
+      <ol class="steps">
+        <li>Run the downloaded file. No administrator rights are needed.</li>
+        <li>Leave "install Blender" ticked if it is offered. Blender is the engine that does the work.</li>
+        <li>Right-click a 3D file and choose <b>Convert 3D to</b> or <b>Preview 3D</b>. On Windows 11 they
+          are under <b>Show more options</b> (or hold Shift while right-clicking).</li>
+      </ol>
+      <p class="note">Windows may say "Windows protected your PC" because the installer is not
+        code-signed. Click <b>More info</b>, then <b>Run anyway</b>.</p>
+    </div>
+
+    <div class="panel" data-os="mac" hidden>
+      <a class="btn" href="https://github.com/srlegrand/convert3d/releases/latest/download/Convert3D-macOS.pkg">
+        Download for macOS<small>Convert3D-macOS.pkg &middot; Intel and Apple Silicon</small></a>
+      <ol class="steps">
+        <li>Install <a href="https://www.blender.org/download/">Blender</a>, the engine that does the work
+          (or <code>brew install --cask blender</code>).</li>
+        <li>Open the downloaded file. macOS will warn that it is not from an identified developer:
+          go to <b>System Settings &gt; Privacy &amp; Security</b> and click <b>Open Anyway</b>
+          (on older versions: right-click the file and choose <b>Open</b>).</li>
+        <li>Right-click a 3D file in Finder and choose <b>Quick Actions &gt; Convert 3D&hellip;</b>
+          or <b>Preview 3D</b>.</li>
+      </ol>
+      <p class="note">If the Quick Actions do not show up, turn them on in <b>System Settings &gt; General &gt;
+        Login Items &amp; Extensions &gt; Finder</b>.</p>
+      <p class="note">Prefer the Terminal? This installs it for your user only, with no warning to click through:</p>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/srlegrand/convert3d/main/install.sh | sh</code></pre>
+    </div>
+
+    <div class="panel" data-os="linux" hidden>
+      <a class="btn" href="https://github.com/srlegrand/convert3d/releases/latest/download/Convert3D-x86_64.AppImage">
+        Download for Linux<small>Convert3D-x86_64.AppImage &middot; Dolphin, GNOME Files</small></a>
+      <ol class="steps">
+        <li>Install Blender, the engine that does the work, for example <code>sudo snap install blender --classic</code>.</li>
+        <li>Make the downloaded file executable (<b>Properties &gt; Permissions</b>, or <code>chmod +x</code>),
+          double-click it and click <b>Install</b>.</li>
+        <li>Close all file manager windows and open them again. Then right-click a 3D file and choose
+          <b>Convert 3D to</b> or <b>Preview 3D</b> (in GNOME Files they are under <b>Scripts</b>).</li>
+      </ol>
+      <p class="note">ARM computers, or no AppImage please:</p>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/srlegrand/convert3d/main/install.sh | sh</code></pre>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>What it does</h2>
+  <div class="grid">
+    <div class="card"><h3>Converts between 3D formats</h3><p>FBX, glTF, OBJ, USD, Alembic, Blender, STL, PLY
+      and more, in any direction. Select several files to convert them all.</p></div>
+    <div class="card"><h3>Previews in your browser</h3><p>Orbit, pan and zoom the model, play its animations,
+      and see triangle, material and texture counts. Works offline.</p></div>
+    <div class="card"><h3>Understands zips</h3><p>Right-click a zip with a model and its textures. Broken
+      texture paths are repaired by finding the files inside the zip.</p></div>
+    <div class="card"><h3>Uses the apps you have</h3><p>Blender does most of the work. Assimp, Maya,
+      3ds Max and Aztek add their formats when they are installed.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Formats</h2>
+  <div class="card scroll">
+    <table>
+      <tr><th>Formats</th><th>Needs</th></tr>
+      <tr><td>fbx, glb, gltf, obj, abc, usd, usda, usdc, usdz, blend, stl, ply</td>
+        <td><a href="https://www.blender.org/download/">Blender</a> 4.2 or newer</td></tr>
+      <tr><td>dae, 3ds, x, 3mf, x3d, and about 35 more that can only be read (lwo, ase, ms3d, md2, md3, ifc...)</td>
+        <td><a href="https://github.com/assimp/assimp">Assimp</a></td></tr>
+      <tr><td>ma, mb</td><td>Maya or Aztek</td></tr>
+      <tr><td>max</td><td>3ds Max (Windows only)</td></tr>
+    </table>
+  </div>
+  <p class="note">Blender is required, the rest is optional. Any format converts to any other when the
+    tools for both are installed. <a href="docs.html#tools">More about the tools</a></p>
+</section>
+
+<section>
+  <h2>Good to know</h2>
+  <details>
+    <summary>What happens to my original file?</summary>
+    <p>Nothing. convert3d writes a new file next to it, such as <code>chair.glb</code>. If that name is
+      taken it asks, or writes <code>chair_(2).glb</code>. <a href="docs.html#output">Where output goes</a></p>
+  </details>
+  <details>
+    <summary>Is my model sent anywhere?</summary>
+    <p>No. Everything runs on your own computer using Blender and the other tools you have installed.
+      There is no account, no tracking and no internet connection involved. Previews open in your
+      browser, but from a file on your disk.</p>
+  </details>
+  <details>
+    <summary>Why does my computer warn me about the installer?</summary>
+    <p>Signing certificates from Microsoft and Apple cost money every year, and this is a free
+      project. The installers are built automatically by GitHub from the
+      <a href="https://github.com/srlegrand/convert3d">public source code</a>.</p>
+  </details>
+  <details>
+    <summary>A format is missing from the menu</summary>
+    <p>The menu lists what the tools found on your computer can write. After installing Assimp, Maya or
+      3ds Max, install convert3d again (or run <code>convert3d install</code>) to add their formats.
+      <a href="docs.html#tools">More in the docs</a></p>
+  </details>
+  <details>
+    <summary>How do I remove it?</summary>
+    <p><b>Windows:</b> Settings &gt; Apps &gt; Installed apps &gt; Convert 3D &gt; Uninstall.<br>
+      <b>macOS:</b> run <code>convert3d uninstall</code> in Terminal.<br>
+      <b>Linux:</b> double-click the AppImage again and choose Remove, or run <code>convert3d uninstall</code>.<br>
+      <a href="docs.html#uninstall">Details</a></p>
+  </details>
+</section>
+
+<footer>
+  Free software under the <a href="https://github.com/srlegrand/convert3d/blob/main/LICENSE">MIT license</a>
+  &middot; <a href="docs.html">Docs</a>
+  &middot; <a href="https://github.com/srlegrand/convert3d">Source on GitHub</a>
+  &middot; <a href="https://github.com/srlegrand/convert3d/issues">Report a problem</a>
+</footer>
+
+</div>
+<script>
+  // Show the tab for the visitor's system first.
+  var tabs = document.querySelectorAll('.tabs button'), panels = document.querySelectorAll('.panel');
+  function show(os) {
+    tabs.forEach(function (t) { t.setAttribute('aria-selected', t.dataset.os === os); });
+    panels.forEach(function (p) { p.hidden = p.dataset.os !== os; });
+  }
+  tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.os); }); });
+  var ua = navigator.userAgent;
+  show(/Mac|iPhone|iPad/.test(ua) ? 'mac' : /Linux|X11/.test(ua) && !/Android/.test(ua) ? 'linux' : 'windows');
+</script>
+</body>
+</html>

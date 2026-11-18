@@ -1,0 +1,72 @@
+#!/bin/bash
+# Entry point of Convert3D.AppImage.
+#
+#   Convert3D.AppImage               install / update / remove the right-click menus
+#   Convert3D.AppImage --install     install without asking
+#   Convert3D.AppImage --uninstall   remove
+#   Convert3D.AppImage COMMAND ...   run convert3d right away (see --help)
+HERE=$(dirname "$(readlink -f "$0")")
+BIN="$HERE/usr/bin/convert3d"
+TITLE="Convert 3D"
+
+case ${1-} in
+    --install)   exec "$BIN" install ;;
+    --uninstall) exec "$BIN" uninstall ;;
+    "")          ;;
+    *)           exec "$BIN" "$@" ;;
+esac
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# In a terminal: just install and say how to undo it.
+if [[ -t 1 ]]; then
+    "$BIN" install || exit 1
+    echo "To remove it again: $(basename "${APPIMAGE:-$0}") --uninstall"
+    exit 0
+fi
+
+# Double-clicked: ask with a dialog.
+installed=0
+[[ -x ${XDG_DATA_HOME:-$HOME/.local/share}/convert3d/bin/convert3d ]] && installed=1
+action=install
+
+if have zenity; then
+    if ((installed)); then
+        choice=$(zenity --question --title="$TITLE" --no-markup --width=420 \
+            --text="Convert 3D is already installed.
+
+Update it to this version, or remove it?" \
+            --ok-label="Update" --cancel-label="Close" --extra-button="Remove" 2>/dev/null)
+        rc=$?
+        if [[ $choice == Remove ]]; then action=uninstall
+        elif ((rc != 0)); then exit 0; fi
+    else
+        zenity --question --title="$TITLE" --no-markup --width=420 \
+            --text="Add \"Convert 3D to\" and \"Preview 3D\" to the right-click menu of your 3D files?" \
+            --ok-label="Install" --cancel-label="Cancel" 2>/dev/null || exit 0
+    fi
+elif have kdialog; then
+    if ((installed)); then
+        kdialog --title "$TITLE" --yes-label "Update" --no-label "Remove" --cancel-label "Close" \
+            --yesnocancel "Convert 3D is already installed.
+
+Update it to this version, or remove it?"
+        case $? in 0) ;; 1) action=uninstall ;; *) exit 0 ;; esac
+    else
+        kdialog --title "$TITLE" --yes-label "Install" --no-label "Cancel" \
+            --yesno "Add \"Convert 3D to\" and \"Preview 3D\" to the right-click menu of your 3D files?" || exit 0
+    fi
+fi
+
+out=$("$BIN" "$action" 2>&1); rc=$?
+
+if have zenity; then
+    if ((rc == 0)); then zenity --info --title="$TITLE" --no-markup --width=520 --text="$out" 2>/dev/null
+    else zenity --error --title="$TITLE" --no-markup --width=520 --text="$out" 2>/dev/null; fi
+elif have kdialog; then
+    if ((rc == 0)); then kdialog --title "$TITLE" --msgbox "$out"
+    else kdialog --title "$TITLE" --error "$out"; fi
+elif have notify-send; then
+    notify-send "$TITLE" "$out"
+fi
+exit $rc

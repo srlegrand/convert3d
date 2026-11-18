@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>convert3d docs</title>
+<meta name="description" content="How to use convert3d: formats and the tools they need, where converted files go, options, previews, thumbnails, zips and the command line.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <a class="brand" href="./"><img src="icon.svg" alt="">convert3d</a>
+  <nav>
+    <a href="./#download">Download</a>
+    <a href="docs.html" aria-current="page">Docs</a>
+    <a href="https://github.com/srlegrand/convert3d">GitHub</a>
+  </nav>
+</header>
+
+<div class="docs">
+  <nav class="toc" aria-label="On this page">
+    <a href="#use">Using it</a>
+    <a href="#tools">Formats and tools</a>
+    <a href="#output">Where output goes</a>
+    <a href="#options">Options</a>
+    <a href="#preview">Previews</a>
+    <a href="#thumbnails">Thumbnails</a>
+    <a href="#zips">Zips</a>
+    <a href="#cli">Command line</a>
+    <a href="#uninstall">Uninstall</a>
+    <a href="#trouble">Troubleshooting</a>
+  </nav>
+
+  <article>
+    <h1>Docs</h1>
+    <p class="lead">Not installed yet? <a href="./#download">Download convert3d</a> first.</p>
+
+    <section id="use">
+      <h2>Using it</h2>
+      <p>Right-click one or more 3D files, or a zip with a model and its textures.</p>
+      <div class="scroll">
+        <table>
+          <tr><th>System</th><th>Where the entries are</th></tr>
+          <tr><td>Windows</td><td><b>Convert 3D to</b> and <b>Preview 3D</b>. On Windows 11 under
+            <b>Show more options</b>, or hold Shift while right-clicking.</td></tr>
+          <tr><td>macOS</td><td><b>Quick Actions &gt; Convert 3D&hellip;</b>, which then asks for the
+            format, and <b>Quick Actions &gt; Preview 3D</b>.</td></tr>
+          <tr><td>Linux, KDE Dolphin</td><td><b>Convert 3D to</b> and <b>Preview 3D</b>.</td></tr>
+          <tr><td>Linux, GNOME Files</td><td><b>Scripts &gt; Convert 3D to</b> and <b>Scripts &gt; Preview 3D</b>.</td></tr>
+        </table>
+      </div>
+      <p>A notification says when a conversion starts and when it is done. If it fails, a dialog shows
+        the end of the log.</p>
+    </section>
+
+    <section id="tools">
+      <h2>Formats and tools</h2>
+      <p>convert3d does not convert anything itself. It drives the 3D applications on your computer,
+        and chains them when one cannot do the whole job: a <code>.dae</code> becomes a
+        <code>.usdz</code> through Assimp and then Blender.</p>
+      <div class="scroll">
+        <table>
+          <tr><th>Formats</th><th>Needs</th></tr>
+          <tr><td>fbx, glb, gltf, obj, abc, usd, usda, usdc, usdz, blend, stl, ply</td><td>Blender 4.2 or newer</td></tr>
+          <tr><td>dae, 3ds, x, 3mf, x3d, and about 35 read-only formats (lwo, ase, ms3d, md2, md3, ifc, off, smd...)</td><td>Assimp</td></tr>
+          <tr><td>ma, mb</td><td>Maya or Aztek</td></tr>
+          <tr><td>max</td><td>3ds Max (Windows only)</td></tr>
+        </table>
+      </div>
+      <p>Blender is required. The rest is optional.</p>
+
+      <h3>Installing the tools</h3>
+      <div class="scroll">
+        <table>
+          <tr><th></th><th>Blender</th><th>Assimp</th></tr>
+          <tr><td>Windows</td><td><code>winget install BlenderFoundation.Blender</code></td><td><a href="https://github.com/assimp/assimp/releases">assimp releases</a></td></tr>
+          <tr><td>macOS</td><td><code>brew install --cask blender</code></td><td><code>brew install assimp</code></td></tr>
+          <tr><td>Linux</td><td><code>sudo snap install blender --classic</code></td><td><code>sudo apt install assimp-utils</code><br><code>sudo dnf install assimp</code></td></tr>
+        </table>
+      </div>
+
+      <h3>After installing a new tool</h3>
+      <p>The menu lists the formats that the tools found at install time can write. After adding Assimp,
+        Maya or 3ds Max, refresh it:</p>
+      <pre><code>convert3d install</code></pre>
+      <p>See which tools were found:</p>
+      <pre><code>convert3d doctor</code></pre>
+      <p>If a tool is somewhere unusual, such as a Flatpak or a portable Blender, point convert3d at it:</p>
+      <pre><code>convert3d set-tool blender "/path/to/blender"
+convert3d set-tool assimp  "/path/to/assimp"
+convert3d set-tool mayapy  "/path/to/mayapy"
+convert3d set-tool 3dsmax  "C:\Program Files\Autodesk\3ds Max 2026\3dsmaxbatch.exe"</code></pre>
+    </section>
+
+    <section id="output">
+      <h2>Where output goes</h2>
+      <ul>
+        <li><code>chair.fbx</code> becomes <code>chair.glb</code>, in the same folder.</li>
+        <li>Formats with separate texture files (obj, gltf, usda, dae...) go into a folder: <code>chair_obj/</code>.</li>
+        <li>If the input was a zip, results with several files are zipped again: <code>chair_obj.zip</code>.</li>
+        <li>When the name is taken, convert3d asks whether to overwrite it or keep both. Keeping both
+          writes <code>chair_(2).glb</code>, then <code>chair_(3).glb</code>.</li>
+      </ul>
+      <p>The original is never modified.</p>
+    </section>
+
+    <section id="options">
+      <h2>Options</h2>
+      <p>Open <b>Options</b> at the bottom of the <b>Convert 3D to</b> menu
+        (on macOS: <b>Quick Actions &gt; Convert 3D Options</b>), or run <code>convert3d options</code>.</p>
+      <ul>
+        <li><b>Output folder.</b> Save next to the original, or ask for a folder before each conversion.</li>
+        <li><b>Existing files.</b> Ask, always overwrite, or always keep both by adding a number to the name.</li>
+        <li><b>Application per format.</b> Choose which application reads and which writes each format,
+          for example Maya instead of Blender for FBX. You can also pick any other program that
+          accepts <code>program input output</code>.</li>
+      </ul>
+      <p>Changes apply to the next conversion.</p>
+    </section>
+
+    <section id="preview">
+      <h2>Previews</h2>
+      <p><b>Preview 3D</b> opens the model in your web browser. Drag to orbit, right-drag to pan,
+        scroll to zoom. The page shows triangle, material and texture counts and the model's size,
+        plays animations, and has wireframe, grid and background toggles.</p>
+      <p>A <code>.glb</code> opens at once. Other formats are converted with Blender first, which takes
+        a few seconds. The page is a single file that works offline, and the last 20 are kept in
+        convert3d's cache folder.</p>
+    </section>
+
+    <section id="thumbnails">
+      <h2>Thumbnails</h2>
+      <p>On Linux, installing also adds a thumbnailer, so the file manager shows the model as the
+        file's icon. It works in KDE Plasma 6 Dolphin, Thunar, Nemo and Caja. Each thumbnail is
+        rendered by Blender and takes a couple of seconds the first time.</p>
+      <ul>
+        <li>KDE Plasma 5 and GNOME Files do not show them.</li>
+        <li>In Dolphin, turn previews on, and check that the size limit in
+          <b>Settings &gt; Interface &gt; Previews</b> is not below the size of your models.</li>
+        <li>On macOS and Windows convert3d adds no thumbnails. Finder's Quick Look (space bar) already
+          previews usdz, usd, obj, stl, ply and abc.</li>
+      </ul>
+    </section>
+
+    <section id="zips">
+      <h2>Zips</h2>
+      <p>Model packs often come as a zip with a model and a folder of textures. Right-click the zip
+        itself: convert3d looks inside for the model (FBX first, then glTF, USD, Alembic, OBJ...)
+        and converts it.</p>
+      <p>Texture paths that point somewhere that no longer exists, such as
+        <code>C:\Users\someone\textures\wood.png</code>, are repaired by finding a file with the
+        same name in the zip.</p>
+    </section>
+
+    <section id="cli">
+      <h2>Command line</h2>
+      <pre><code>convert3d convert --to glb chair.fbx table.obj props.zip
+convert3d convert --to usdz --out-dir ./usd *.fbx
+convert3d view chair.fbx                 # open a preview in the browser
+convert3d thumbnail --size 512 chair.fbx chair.png
+convert3d formats                        # every format, and whether it works here
+convert3d doctor                         # tools found, settings, log folder</code></pre>
+      <p>Where the command is after installing:</p>
+      <div class="scroll">
+        <table>
+          <tr><td>Windows</td><td><code>%LOCALAPPDATA%\convert3d\bin\convert3d.exe</code></td></tr>
+          <tr><td>macOS</td><td><code>convert3d</code> (installer package), or
+            <code>~/Library/Application Support/convert3d/bin/convert3d</code></td></tr>
+          <tr><td>Linux</td><td><code>convert3d</code>, linked in <code>~/.local/bin</code></td></tr>
+        </table>
+      </div>
+      <p>To build it yourself you need <a href="https://rustup.rs">Rust</a>:</p>
+      <pre><code>cargo install --git https://github.com/srlegrand/convert3d
+convert3d install</code></pre>
+    </section>
+
+    <section id="uninstall">
+      <h2>Uninstall</h2>
+      <div class="scroll">
+        <table>
+          <tr><td>Windows</td><td><b>Settings &gt; Apps &gt; Installed apps &gt; Convert 3D &gt; Uninstall</b></td></tr>
+          <tr><td>macOS</td><td><code>convert3d uninstall</code>, then <code>sudo rm /usr/local/bin/convert3d</code>
+            if you used the installer package</td></tr>
+          <tr><td>Linux</td><td>Double-click the AppImage again and choose <b>Remove</b>, or run <code>convert3d uninstall</code></td></tr>
+        </table>
+      </div>
+      <p>This removes the menus, the thumbnailer and convert3d's copy of itself. Blender and the other
+        tools are left alone.</p>
+    </section>
+
+    <section id="trouble">
+      <h2>Troubleshooting</h2>
+      <details>
+        <summary>The menu does not appear</summary>
+        <p><b>Linux:</b> close every file manager window and open it again.<br>
+          <b>macOS:</b> turn the Quick Actions on in System Settings &gt; General &gt; Login Items &amp;
+          Extensions &gt; Finder.<br>
+          <b>Windows 11:</b> look under Show more options.</p>
+      </details>
+      <details>
+        <summary>"Blender was not found"</summary>
+        <p>Install Blender, or tell convert3d where it is with
+          <code>convert3d set-tool blender /path/to/blender</code>. A Flatpak Blender is not found
+          automatically.</p>
+      </details>
+      <details>
+        <summary>A conversion failed</summary>
+        <p>The error dialog shows the end of the log. Full logs are in the folder that
+          <code>convert3d doctor</code> prints. Please attach the log when you
+          <a href="https://github.com/srlegrand/convert3d/issues">report a problem</a>.</p>
+      </details>
+      <details>
+        <summary>Textures are missing after converting</summary>
+        <p>Alembic, STL and PLY cannot hold materials, so textures are dropped when converting to them.
+          For other formats, keep the textures next to the model or convert the zip they came in,
+          so convert3d can find them.</p>
+      </details>
+      <details>
+        <summary>.max, .ma or .mb will not convert</summary>
+        <p><code>.max</code> needs 3ds Max, which only exists for Windows. <code>.ma</code> and
+          <code>.mb</code> need Maya or Aztek.</p>
+      </details>
+    </section>
+  </article>
+</div>
+
+<footer>
+  Free software under the <a href="https://github.com/srlegrand/convert3d/blob/main/LICENSE">MIT license</a>
+  &middot; <a href="https://github.com/srlegrand/convert3d">Source on GitHub</a>
+  &middot; <a href="https://github.com/srlegrand/convert3d/issues">Report a problem</a>
+</footer>
+
+</div>
+</body>
+</html>

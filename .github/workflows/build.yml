@@ -1,0 +1,277 @@
+# Checks the code on Linux, macOS and Windows and builds the installers.
+# Every push to main that passes is published as a new GitHub release with the
+# next patch version (v0.1.0 -> v0.1.1), so the releases/latest/download/ links
+# in the README and on the website always serve the newest build. Push a tag
+# like v0.2.0 yourself to start a new minor or major version.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time per branch, so two quick pushes cannot pick the same version.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Pick the version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+      publish: ${{ steps.pick.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # all tags
+      - id: pick
+        run: |
+          version=0.0.0
+          publish=false
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            version=${GITHUB_REF_NAME#v}
+            publish=true
+          elif [[ $GITHUB_EVENT_NAME == push && $GITHUB_REF == refs/heads/main ]]; then
+            # A commit that was tagged by hand is released by the tag's own run.
+            if [[ -z $(git tag --points-at HEAD --list 'v*') ]]; then
+              last=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
+              if [[ -z $last ]]; then
+                # The very first release takes the version in Cargo.toml.
+                version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+              else
+                IFS=. read -r major minor patch <<<"$last"
+                version="${major#v}.$minor.$((patch + 1))"
+              fi
+              publish=true
+            fi
+          fi
+          echo "version=$version publish=$publish"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+  checks:
+    name: Checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  viewer:
+    name: Viewer bundle is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check viewer/dist is built from viewer.js
+        working-directory: viewer
+        run: |
+          npm ci
+          npm run build
+          git diff --exit-code dist
+
+  linux:
+    name: Linux (${{ matrix.arch }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { arch: arm64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+    runs-on: ${{ matrix.os }}
+    env:
+      CONVERT3D_VERSION: ${{ needs.version.outputs.version }}
+      APPIMAGE_EXTRACT_AND_RUN: 1   # the runners have no FUSE
+      DIR: convert3d-linux-${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build (static, runs on any distribution)
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package the archive
+        run: |
+          mkdir -p dist "$DIR"
+          cp "target/${{ matrix.target }}/release/convert3d" README.md LICENSE "$DIR/"
+          tar czf "dist/$DIR.tar.gz" "$DIR"
+      - name: Test install and uninstall
+        run: |
+          data="$HOME/.local/share"
+          test "$("$DIR/convert3d" --version)" = "convert3d $CONVERT3D_VERSION"
+          "$DIR/convert3d" install
+          test -x "$data/convert3d/bin/convert3d"
+          test -f "$data/kio/servicemenus/convert3d.desktop"
+          test -f "$data/thumbnailers/convert3d.thumbnailer"
+          "$HOME/.local/bin/convert3d" uninstall
+          test ! -e "$data/kio/servicemenus/convert3d.desktop"
+          test ! -e "$HOME/.local/bin/convert3d"
+      - name: Test real conversions with Blender
+        if: matrix.arch == 'x86_64'
+        run: |
+          sudo snap install blender --classic
+          tests/smoke.sh "$DIR/convert3d"
+      - name: Build the AppImage
+        if: matrix.arch == 'x86_64'
+        run: |
+          sudo apt-get update && sudo apt-get install -y desktop-file-utils
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          APPIMAGETOOL="$RUNNER_TEMP/appimagetool" packaging/build-appimage.sh "$DIR/convert3d"
+      - name: Test the AppImage
+        if: matrix.arch == 'x86_64'
+        run: |
+          app=dist/Convert3D-x86_64.AppImage
+          test "$("$app" --version)" = "convert3d $CONVERT3D_VERSION"
+          "$app" --install
+          test -x "$HOME/.local/share/convert3d/bin/convert3d"
+          "$app" --uninstall
+          test ! -e "$HOME/.local/share/convert3d/bin/convert3d"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS (pkg)
+    runs-on: macos-latest
+    needs: version
+    env:
+      CONVERT3D_VERSION: ${{ needs.version.outputs.version }}
+      DIR: convert3d-macos-universal
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Build for Apple Silicon and Intel, joined in one file
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          mkdir -p dist "$DIR"
+          lipo -create -output "$DIR/convert3d" \
+            target/aarch64-apple-darwin/release/convert3d target/x86_64-apple-darwin/release/convert3d
+          codesign --force --sign - "$DIR/convert3d"   # ad hoc, which Apple Silicon requires
+          lipo -info "$DIR/convert3d"
+      - name: Package the archive
+        run: |
+          cp README.md LICENSE "$DIR/"
+          tar czf "dist/$DIR.tar.gz" "$DIR"
+      - name: Test install and uninstall
+        run: |
+          services="$HOME/Library/Services"
+          test "$("$DIR/convert3d" --version)" = "convert3d $CONVERT3D_VERSION"
+          "$DIR/convert3d" install
+          for name in "Convert 3D…" "Preview 3D" "Convert 3D Options"; do
+            plutil -lint "$services/$name.workflow/Contents/Info.plist" \
+                         "$services/$name.workflow/Contents/document.wflow"
+          done
+          "$HOME/Library/Application Support/convert3d/bin/convert3d" uninstall
+          test ! -e "$services/Preview 3D.workflow"
+      - name: Build the installer package
+        run: |
+          mkdir -p build/pkgroot/usr/local/bin
+          cp "$DIR/convert3d" build/pkgroot/usr/local/bin/
+          pkgbuild --root build/pkgroot --install-location / --scripts packaging/macos/scripts \
+                   --identifier io.github.srlegrand.convert3d --version "$CONVERT3D_VERSION" \
+                   dist/Convert3D-macOS.pkg
+      - name: Test the installer package
+        run: |
+          sudo installer -pkg dist/Convert3D-macOS.pkg -target /
+          test "$(/usr/local/bin/convert3d --version)" = "convert3d $CONVERT3D_VERSION"
+          # The package adds the menus for the person installing it.
+          if [[ -d "$HOME/Library/Services/Preview 3D.workflow" ]]; then
+            echo "The package added the Quick Actions for $USER."
+          else
+            echo "::warning::The package did not add the Quick Actions for $USER on this runner."
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows (setup.exe)
+    runs-on: windows-latest
+    needs: version
+    env:
+      CONVERT3D_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release
+      - name: Package the archive
+        shell: pwsh
+        run: |
+          $dir = 'convert3d-windows-x86_64'
+          New-Item -ItemType Directory -Force dist, $dir | Out-Null
+          Copy-Item target\release\convert3d.exe, README.md, LICENSE $dir
+          Compress-Archive -Path $dir -DestinationPath "dist\$dir.zip"
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Build the setup program
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:CONVERT3D_VERSION" packaging\windows\setup.iss
+          if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
+      - name: Test the setup program (silent install, then uninstall)
+        shell: pwsh
+        run: |
+          $assoc = 'HKCU:\Software\Classes\SystemFileAssociations\.fbx\shell'
+          $dir = Join-Path $env:LOCALAPPDATA 'convert3d'
+          Start-Process -Wait dist\Convert3D-Setup.exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS='
+          if (-not (Test-Path "$dir\bin\convert3d.exe")) { throw 'convert3d.exe was not installed' }
+          foreach ($verb in 'Convert3D', 'Preview3D') {
+            if (-not (Test-Path "$assoc\$verb")) { throw "the $verb right-click entry was not added" }
+          }
+          Get-ChildItem 'HKCU:\Software\Classes\Convert3D.Menu\shell' | ForEach-Object { (Get-ItemProperty $_.PSPath).MUIVerb }
+          Start-Process -Wait "$dir\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          Start-Sleep -Seconds 5   # the uninstaller finishes in a copy of itself
+          if (Test-Path "$assoc\Convert3D") { throw 'the right-click menu was not removed' }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: needs.version.outputs.publish == 'true'
+    needs: [version, checks, viewer, linux, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          ls -l dist
+          # Creates the tag on this commit if it does not exist yet (push to main).
+          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --latest \
+            --title "convert3d $TAG" --generate-notes
